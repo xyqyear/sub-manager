@@ -1,0 +1,289 @@
+import {
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from "antd";
+import { useEffect, useState } from "react";
+import type { RuleSource } from "@/types/api";
+import api from "@/utils/api";
+
+type RuleFormValues = {
+  name: string;
+  mode: "remote" | "manual";
+  behavior: "classical" | "domain" | "ipcidr";
+  enabled: boolean;
+  remote_url?: string;
+  auto_update?: boolean;
+  update_interval_sec?: number;
+  payload_lines_text?: string;
+};
+
+const defaultFormValues: RuleFormValues = {
+  name: "",
+  mode: "remote",
+  behavior: "classical",
+  enabled: true,
+  remote_url: "",
+  auto_update: false,
+  update_interval_sec: 3600,
+  payload_lines_text: "",
+};
+
+function linesTextToArray(text: string | undefined): string[] {
+  if (!text) {
+    return [];
+  }
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+export default function RulesPage() {
+  const [items, setItems] = useState<RuleSource[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<RuleSource | null>(null);
+  const [form] = Form.useForm<RuleFormValues>();
+
+  const mode = Form.useWatch("mode", form);
+
+  const fetchItems = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get<RuleSource[]>("/admin/rules");
+      setItems(response.data);
+    } catch (error) {
+      void message.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchItems();
+  }, []);
+
+  const openCreate = () => {
+    setEditing(null);
+    form.setFieldsValue(defaultFormValues);
+    setOpen(true);
+  };
+
+  const openEdit = (item: RuleSource) => {
+    setEditing(item);
+    form.setFieldsValue({
+      name: item.name,
+      mode: item.mode,
+      behavior: item.behavior,
+      enabled: item.enabled,
+      remote_url: item.remote_url ?? "",
+      auto_update: item.auto_update,
+      update_interval_sec: item.update_interval_sec,
+      payload_lines_text: (item.cached_payload_lines_json ?? []).join("\n"),
+    });
+    setOpen(true);
+  };
+
+  const handleDelete = async (item: RuleSource) => {
+    try {
+      await api.delete(`/admin/rules/${item.id}`);
+      void message.success("Deleted");
+      await fetchItems();
+    } catch (error) {
+      void message.error(String(error));
+    }
+  };
+
+  const handleRefresh = async (item: RuleSource) => {
+    try {
+      await api.post(`/admin/rules/${item.id}/refresh`);
+      void message.success("Refreshed");
+      await fetchItems();
+    } catch (error) {
+      void message.error(String(error));
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      const payload: Record<string, unknown> = {
+        name: values.name,
+        mode: values.mode,
+        behavior: values.behavior,
+        enabled: values.enabled,
+        remote_url: values.remote_url,
+        auto_update: values.auto_update,
+        update_interval_sec: values.update_interval_sec,
+      };
+
+      if (values.mode === "manual") {
+        payload.payload_lines = linesTextToArray(values.payload_lines_text);
+      }
+
+      if (editing) {
+        await api.put(`/admin/rules/${editing.id}`, payload);
+      } else {
+        await api.post("/admin/rules", payload);
+      }
+      setOpen(false);
+      await fetchItems();
+      void message.success(editing ? "Updated" : "Created");
+    } catch (error) {
+      void message.error(String(error));
+    }
+  };
+
+  const columns = [
+    {
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+    },
+    {
+      title: "Mode",
+      dataIndex: "mode",
+      key: "mode",
+      render: (value: string) => <Tag>{value}</Tag>,
+    },
+    {
+      title: "Behavior",
+      dataIndex: "behavior",
+      key: "behavior",
+      render: (value: string) => <Tag color="blue">{value}</Tag>,
+    },
+    {
+      title: "Status",
+      dataIndex: "last_status",
+      key: "last_status",
+      render: (value: string) => (
+        <Tag color={value === "ok" ? "success" : value === "error" ? "error" : "default"}>{value}</Tag>
+      ),
+    },
+    {
+      title: "Update",
+      key: "update",
+      render: (_: unknown, row: RuleSource) => (
+        <Typography.Text type="secondary">
+          {row.auto_update ? `${row.update_interval_sec}s` : "manual"}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_: unknown, row: RuleSource) => (
+        <Space>
+          <Button size="small" onClick={() => openEdit(row)}>
+            Edit
+          </Button>
+          <Button size="small" onClick={() => void handleRefresh(row)}>
+            Refresh
+          </Button>
+          <Popconfirm title="Delete rule?" onConfirm={() => void handleDelete(row)}>
+            <Button size="small" danger>
+              Delete
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <Space direction="vertical" style={{ display: "flex" }} size={16}>
+      <Space>
+        <Button type="primary" onClick={openCreate}>
+          New Rule
+        </Button>
+        <Button onClick={() => void fetchItems()}>Reload</Button>
+      </Space>
+
+      <Table<RuleSource>
+        rowKey="id"
+        loading={loading}
+        dataSource={items}
+        columns={columns}
+        pagination={false}
+      />
+
+      <Modal
+        title={editing ? "Edit Rule" : "Create Rule"}
+        open={open}
+        onCancel={() => setOpen(false)}
+        onOk={() => void handleSubmit()}
+        width={720}
+        destroyOnHidden
+      >
+        <Form form={form} layout="vertical" initialValues={defaultFormValues}>
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}> 
+            <Input />
+          </Form.Item>
+
+          <Form.Item name="mode" label="Mode" rules={[{ required: true }]}> 
+            <Select
+              options={[
+                { label: "Remote", value: "remote" },
+                { label: "Manual", value: "manual" },
+              ]}
+            />
+          </Form.Item>
+
+          <Form.Item name="behavior" label="Behavior" rules={[{ required: true }]}> 
+            <Select
+              options={[
+                { label: "classical", value: "classical" },
+                { label: "domain", value: "domain" },
+                { label: "ipcidr", value: "ipcidr" },
+              ]}
+            />
+          </Form.Item>
+
+          <Form.Item name="enabled" label="Enabled" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+
+          {mode === "remote" ? (
+            <>
+              <Form.Item
+                name="remote_url"
+                label="Remote URL"
+                rules={[{ required: true, message: "remote_url is required" }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item name="auto_update" label="Auto Update" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+              <Form.Item name="update_interval_sec" label="Update Interval (sec)">
+                <InputNumber min={60} style={{ width: "100%" }} />
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item
+              name="payload_lines_text"
+              label="Payload Lines"
+              rules={[{ required: true, message: "payload lines are required" }]}
+            >
+              <Input.TextArea
+                rows={10}
+                placeholder="one rule line per row"
+              />
+            </Form.Item>
+          )}
+        </Form>
+      </Modal>
+    </Space>
+  );
+}

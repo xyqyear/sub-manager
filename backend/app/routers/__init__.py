@@ -1,1 +1,1 @@
-"""API routers."""
+"""Router package."""

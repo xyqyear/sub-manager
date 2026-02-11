@@ -1,11 +1,4 @@
-import {
-  Alert,
-  Layout,
-  Menu,
-  Space,
-  Tag,
-  Typography,
-} from "antd";
+import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
 import { ErrorBoundary } from "react-error-boundary";
 import {
   Link,
@@ -13,29 +6,42 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
-import AboutPage from "@/pages/About";
-import DashboardPage from "@/pages/Dashboard";
+import LoginPage from "@/pages/Login";
+import MainConfigsPage from "@/pages/MainConfigs";
+import RulesPage from "@/pages/Rules";
+import SubscriptionsPage from "@/pages/Subscriptions";
+import { clearAdminToken, getAdminToken } from "@/utils/api";
 
 const { Header, Content, Footer } = Layout;
+
+function isLoggedIn(): boolean {
+  return getAdminToken().trim().length > 0;
+}
 
 function ErrorFallback() {
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <Content style={{ padding: 24 }}>
-        <Alert
-          type="error"
-          showIcon
-          message="Application error"
-          description="An unexpected error occurred in the frontend."
-        />
+        <Typography.Title level={4}>Application error</Typography.Title>
       </Content>
     </Layout>
   );
 }
 
-function AppShell() {
+function ProtectedAppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const doLogout = () => {
+    clearAdminToken();
+    navigate("/login", { replace: true });
+  };
+
+  if (!isLoggedIn()) {
+    return <Navigate to="/login" replace />;
+  }
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -43,31 +49,37 @@ function AppShell() {
         <Typography.Title level={4} style={{ color: "#fff", margin: 0 }}>
           Sub Manager
         </Typography.Title>
-        <Tag color="blue">React + FastAPI</Tag>
+        <Tag color="blue">Token Admin</Tag>
         <Menu
           mode="horizontal"
           theme="dark"
           selectedKeys={[location.pathname]}
           items={[
-            { key: "/", label: <Link to="/">Dashboard</Link> },
-            { key: "/about", label: <Link to="/about">About</Link> },
+            { key: "/subscriptions", label: <Link to="/subscriptions">Subscriptions</Link> },
+            { key: "/rules", label: <Link to="/rules">Rules</Link> },
+            { key: "/configs", label: <Link to="/configs">Main Configs</Link> },
           ]}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
         />
+        <Button size="small" onClick={doLogout}>
+          Logout
+        </Button>
       </Header>
 
       <Content style={{ padding: 24 }}>
-        <Space direction="vertical" size={24} style={{ display: "flex" }}>
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Space>
+        <Routes>
+          <Route path="/subscriptions" element={<SubscriptionsPage />} />
+          <Route path="/rules" element={<RulesPage />} />
+          <Route path="/configs" element={<MainConfigsPage />} />
+          <Route path="*" element={<Navigate to="/subscriptions" replace />} />
+        </Routes>
       </Content>
 
       <Footer style={{ textAlign: "center" }}>
-        React + Vite + Ant Design 6 + FastAPI
+        <Space>
+          <span>Sub Manager v1</span>
+          <span>React + FastAPI</span>
+        </Space>
       </Footer>
     </Layout>
   );
@@ -76,7 +88,13 @@ function AppShell() {
 export default function App() {
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>
-      <AppShell />
+      <Routes>
+        <Route
+          path="/login"
+          element={isLoggedIn() ? <Navigate to="/subscriptions" replace /> : <LoginPage />}
+        />
+        <Route path="/*" element={<ProtectedAppLayout />} />
+      </Routes>
     </ErrorBoundary>
   );
 }

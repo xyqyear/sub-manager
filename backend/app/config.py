@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,18 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./db.sqlite3"
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
     sql_echo: bool = False
+
+    admin_token: str = "change-me"
+    refresh_loop_tick_sec: int = 15
+    default_test_url: str = "https://www.gstatic.com/generate_204"
+    default_test_interval: int = 300
+    public_base_url: str = "http://localhost:5678"
+
+    request_timeout_sec: float = 30.0
+    min_refresh_interval_sec: int = 60
+    max_refresh_interval_sec: int = 86400
+
+    query_password_name: str = Field(default="password")
 
 
 settings = Settings()
