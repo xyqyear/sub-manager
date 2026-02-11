@@ -164,7 +164,10 @@ async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSourc
         raise ServiceError("remote rule has no remote_url", 422)
 
     try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout_sec) as client:
+        async with httpx.AsyncClient(
+            timeout=settings.request_timeout_sec,
+            follow_redirects=True,
+        ) as client:
             response = await client.get(source.remote_url)
 
         if response.status_code < 200 or response.status_code >= 300:

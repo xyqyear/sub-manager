@@ -174,7 +174,10 @@ async def refresh_remote_subscription(db: AsyncSession, source: SubscriptionSour
         headers["Authorization"] = source.remote_auth_header
 
     try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout_sec) as client:
+        async with httpx.AsyncClient(
+            timeout=settings.request_timeout_sec,
+            follow_redirects=True,
+        ) as client:
             response = await client.get(source.remote_url, headers=headers)
 
         if response.status_code < 200 or response.status_code >= 300:
