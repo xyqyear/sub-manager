@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 
+TEST_DB_PATH = Path("/tmp/sub_manager_test.sqlite3")
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
+
 from app.config import settings
-from app.db.database import AsyncSessionLocal
+from app.db.database import AsyncSessionLocal, engine, init_db
 from app.main import app
 from app.models import (
     DialerOverrideRule,
@@ -19,6 +25,19 @@ from app.models import (
     ShuntBinding,
     SubscriptionSource,
 )
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def setup_test_database() -> None:
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
+
+    await init_db()
+    yield
+
+    await engine.dispose()
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
 
 
 @pytest.fixture
