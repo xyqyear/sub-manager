@@ -1,0 +1,49 @@
+[project]
+name = "sub-manager-backend"
+version = "0"
+description = "FastAPI backend for sub-manager"
+readme = "README.md"
+requires-python = ">=3.13,<4"
+dependencies = [
+    "aiofiles>=25.1.0,<26",
+    "aiosqlite~=0.22.0",
+    "alembic>=1.17.0,<2",
+    "apscheduler>=3.11.0,<4",
+    "asyncer==0.0.12",
+    "fastapi~=0.128.0",
+    "httpx>=0.28.1,<0.29",
+    "jinja2>=3.1.6,<4",
+    "joserfc>=1.4.0,<2",
+    "pillow>=12.0.0,<13",
+    "psutil>=7.1.1,<8",
+    "pwdlib[argon2]~=0.3.0",
+    "pydantic>=2.12.3,<3",
+    "pydantic-settings>=2.11.0,<3",
+    "python-multipart==0.0.21",
+    "pyyaml>=6.0.3,<7",
+    "sqlalchemy>=2.0.44,<3",
+    "uvicorn[standard]~=0.40.0",
+    "watchfiles>=1.1.1,<2",
+]
+
+[project.scripts]
+dev = "main:main"
+
+[dependency-groups]
+dev = [
+    "coverage>=7.11.0,<8",
+    "ipykernel>=7.0.1,<8",
+    "ipywidgets>=8.1.7,<9",
+    "pytest~=9.0.2",
+    "pytest-asyncio>=1.2.0,<2",
+    "pytest-cov>=7.0.0,<8",
+    "setuptools>=80.9.0,<81",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-vv --cov=app --cov-report=term-missing"
+pythonpath = ["."]
