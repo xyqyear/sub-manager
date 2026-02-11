@@ -35,6 +35,7 @@ class MainConfigRead(BaseModel):
     id: str
     name: str
     password_plain: str
+    base_config_yaml: str
     enabled: bool
     final_target_type: str
     final_target_group_name: str | None

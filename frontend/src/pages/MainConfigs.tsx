@@ -1,67 +1,48 @@
 import {
   Button,
-  Drawer,
-  Form,
   Input,
   Modal,
   Popconfirm,
-  Select,
   Space,
-  Switch,
   Table,
   Tag,
   Typography,
   message,
 } from "antd";
 import { useEffect, useState } from "react";
-import type { BuilderState, MainConfig, PreviewResponse } from "@/types/api";
+import MainConfigEditorDrawer from "@/pages/main-configs/MainConfigEditorDrawer";
+import type {
+  MainConfig,
+  PreviewResponse,
+  RuleSource,
+  SubscriptionSource,
+} from "@/types/api";
 import api from "@/utils/api";
-
-type MainConfigFormValues = {
-  name: string;
-  password_plain: string;
-  base_config_yaml: string;
-  enabled: boolean;
-  final_target_type: "DIRECT" | "REJECT" | "group";
-  final_target_group_name?: string;
-};
-
-const defaultMainConfigValues: MainConfigFormValues = {
-  name: "",
-  password_plain: "",
-  base_config_yaml: "mixed-port: 7890\nmode: rule\n",
-  enabled: true,
-  final_target_type: "DIRECT",
-  final_target_group_name: "",
-};
-
-const defaultBuilderState: BuilderState = {
-  subscription_links: [],
-  filtered_groups: [],
-  manual_groups: [],
-  dialer_override_rules: [],
-  shunt_bindings: [],
-};
 
 export default function MainConfigsPage() {
   const [items, setItems] = useState<MainConfig[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionSource[]>([]);
+  const [rules, setRules] = useState<RuleSource[]>([]);
   const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MainConfig | null>(null);
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const [builderConfig, setBuilderConfig] = useState<MainConfig | null>(null);
-  const [builderText, setBuilderText] = useState(JSON.stringify(defaultBuilderState, null, 2));
-  const [previewYaml, setPreviewYaml] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [form] = Form.useForm<MainConfigFormValues>();
+  const [previewYaml, setPreviewYaml] = useState("");
+  const [previewDiagnostics, setPreviewDiagnostics] =
+    useState<PreviewResponse["diagnostics"] | null>(null);
 
-  const finalTargetType = Form.useWatch("final_target_type", form);
-
-  const fetchItems = async () => {
+  const fetchAll = async () => {
     setLoading(true);
     try {
-      const response = await api.get<MainConfig[]>("/admin/main-configs");
-      setItems(response.data);
+      const [configsResponse, subscriptionsResponse, rulesResponse] = await Promise.all([
+        api.get<MainConfig[]>("/admin/main-configs"),
+        api.get<SubscriptionSource[]>("/admin/subscriptions"),
+        api.get<RuleSource[]>("/admin/rules"),
+      ]);
+
+      setItems(configsResponse.data);
+      setSubscriptions(subscriptionsResponse.data);
+      setRules(rulesResponse.data);
     } catch (error) {
       void message.error(String(error));
     } finally {
@@ -70,121 +51,50 @@ export default function MainConfigsPage() {
   };
 
   useEffect(() => {
-    void fetchItems();
+    void fetchAll();
   }, []);
 
   const openCreate = () => {
     setEditing(null);
-    form.setFieldsValue(defaultMainConfigValues);
-    setOpen(true);
+    setEditorOpen(true);
   };
 
   const openEdit = (item: MainConfig) => {
     setEditing(item);
-    form.setFieldsValue({
-      name: item.name,
-      password_plain: item.password_plain,
-      base_config_yaml: "",
-      enabled: item.enabled,
-      final_target_type: item.final_target_type,
-      final_target_group_name: item.final_target_group_name ?? "",
-    });
-    setOpen(true);
+    setEditorOpen(true);
+  };
+
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setEditing(null);
   };
 
   const handleDelete = async (item: MainConfig) => {
     try {
       await api.delete(`/admin/main-configs/${item.id}`);
-      void message.success("Deleted");
-      await fetchItems();
+      void message.success("Main config deleted");
+      await fetchAll();
     } catch (error) {
       void message.error(String(error));
     }
   };
 
-  const handleSubmit = async () => {
+  const handlePreview = async (item: MainConfig) => {
     try {
-      const values = await form.validateFields();
-      if (editing) {
-        const payload: Record<string, unknown> = {
-          name: values.name,
-          password_plain: values.password_plain,
-          enabled: values.enabled,
-          final_target_type: values.final_target_type,
-          final_target_group_name:
-            values.final_target_type === "group"
-              ? values.final_target_group_name
-              : null,
-        };
-        if (values.base_config_yaml.trim()) {
-          payload.base_config_yaml = values.base_config_yaml;
-        }
-        await api.put(`/admin/main-configs/${editing.id}`, payload);
-      } else {
-        await api.post("/admin/main-configs", {
-          ...values,
-          final_target_group_name:
-            values.final_target_type === "group"
-              ? values.final_target_group_name
-              : null,
-        });
-      }
-      setOpen(false);
-      await fetchItems();
-      void message.success(editing ? "Updated" : "Created");
-    } catch (error) {
-      void message.error(String(error));
-    }
-  };
-
-  const openBuilder = async (item: MainConfig) => {
-    setBuilderConfig(item);
-    setBuilderOpen(true);
-    try {
-      const response = await api.get<BuilderState>(`/admin/main-configs/${item.id}/builder`);
-      setBuilderText(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      setBuilderText(JSON.stringify(defaultBuilderState, null, 2));
-      void message.error(String(error));
-    }
-  };
-
-  const handleSaveBuilder = async () => {
-    if (!builderConfig) {
-      return;
-    }
-    try {
-      const parsed = JSON.parse(builderText) as BuilderState;
-      await api.put(`/admin/main-configs/${builderConfig.id}/builder`, parsed);
-      void message.success("Builder saved");
-    } catch (error) {
-      void message.error(String(error));
-    }
-  };
-
-  const handlePreview = async () => {
-    if (!builderConfig) {
-      return;
-    }
-    try {
-      const response = await api.post<PreviewResponse>(
-        `/admin/main-configs/${builderConfig.id}/preview`,
-      );
+      const response = await api.post<PreviewResponse>(`/admin/main-configs/${item.id}/preview`);
       setPreviewYaml(response.data.yaml);
+      setPreviewDiagnostics(response.data.diagnostics);
       setPreviewOpen(true);
     } catch (error) {
       void message.error(String(error));
     }
   };
 
-  const handleCopyArtifactLink = async () => {
-    if (!builderConfig) {
-      return;
-    }
-    const link = `${window.location.origin}/api/public/configs/${builderConfig.id}/artifact?password=${encodeURIComponent(builderConfig.password_plain)}`;
+  const handleCopyArtifactLink = async (item: MainConfig) => {
+    const link = `${window.location.origin}/api/public/configs/${item.id}/artifact?password=${encodeURIComponent(item.password_plain)}`;
     try {
       await navigator.clipboard.writeText(link);
-      void message.success("Artifact link copied");
+      void message.success("Artifact URL copied");
     } catch {
       void message.error("Copy failed");
     }
@@ -197,8 +107,8 @@ export default function MainConfigsPage() {
       key: "name",
     },
     {
-      title: "Final",
-      key: "final",
+      title: "Final Target",
+      key: "final_target",
       render: (_: unknown, row: MainConfig) => (
         <Tag color="blue">
           {row.final_target_type === "group"
@@ -223,10 +133,13 @@ export default function MainConfigsPage() {
           <Button size="small" onClick={() => openEdit(row)}>
             Edit
           </Button>
-          <Button size="small" onClick={() => void openBuilder(row)}>
-            Builder
+          <Button size="small" onClick={() => void handlePreview(row)}>
+            Preview
           </Button>
-          <Popconfirm title="Delete config?" onConfirm={() => void handleDelete(row)}>
+          <Button size="small" onClick={() => void handleCopyArtifactLink(row)}>
+            Copy URL
+          </Button>
+          <Popconfirm title="Delete this main config?" onConfirm={() => void handleDelete(row)}>
             <Button size="small" danger>
               Delete
             </Button>
@@ -242,7 +155,7 @@ export default function MainConfigsPage() {
         <Button type="primary" onClick={openCreate}>
           New Main Config
         </Button>
-        <Button onClick={() => void fetchItems()}>Reload</Button>
+        <Button onClick={() => void fetchAll()}>Reload</Button>
       </Space>
 
       <Table<MainConfig>
@@ -253,96 +166,51 @@ export default function MainConfigsPage() {
         pagination={false}
       />
 
-      <Modal
-        title={editing ? "Edit Main Config" : "Create Main Config"}
-        open={open}
-        onCancel={() => setOpen(false)}
-        onOk={() => void handleSubmit()}
-        width={760}
-        destroyOnHidden
-      >
-        <Form form={form} layout="vertical" initialValues={defaultMainConfigValues}>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}> 
-            <Input />
-          </Form.Item>
-
-          <Form.Item
-            name="password_plain"
-            label="Config Password"
-            rules={[{ required: true }]}
-          >
-            <Input.Password />
-          </Form.Item>
-
-          <Form.Item
-            name="base_config_yaml"
-            label="Base Config YAML"
-            rules={editing ? [] : [{ required: true }]}
-            extra={editing ? "Leave empty to keep current value." : undefined}
-          >
-            <Input.TextArea rows={10} />
-          </Form.Item>
-
-          <Form.Item name="enabled" label="Enabled" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-
-          <Form.Item name="final_target_type" label="Final Target Type" rules={[{ required: true }]}> 
-            <Select
-              options={[
-                { label: "DIRECT", value: "DIRECT" },
-                { label: "REJECT", value: "REJECT" },
-                { label: "group", value: "group" },
-              ]}
-            />
-          </Form.Item>
-
-          {finalTargetType === "group" ? (
-            <Form.Item
-              name="final_target_group_name"
-              label="Final Target Group Name"
-              rules={[{ required: true }]}
-            >
-              <Input />
-            </Form.Item>
-          ) : null}
-        </Form>
-      </Modal>
-
-      <Drawer
-        title={builderConfig ? `Builder: ${builderConfig.name}` : "Builder"}
-        open={builderOpen}
-        onClose={() => setBuilderOpen(false)}
-        width={900}
-        extra={
-          <Space>
-            <Button onClick={() => void handleCopyArtifactLink()}>Copy Artifact URL</Button>
-            <Button onClick={() => void handlePreview()}>Preview</Button>
-            <Button type="primary" onClick={() => void handleSaveBuilder()}>
-              Save Builder
-            </Button>
-          </Space>
-        }
-      >
-        <Typography.Paragraph type="secondary">
-          Builder JSON editor. Keep schema aligned with backend BuilderPayload.
-        </Typography.Paragraph>
-        <Input.TextArea
-          value={builderText}
-          onChange={(event) => setBuilderText(event.target.value)}
-          rows={28}
-          style={{ fontFamily: "monospace" }}
-        />
-      </Drawer>
+      <MainConfigEditorDrawer
+        open={editorOpen}
+        config={editing}
+        subscriptions={subscriptions}
+        rules={rules}
+        onClose={closeEditor}
+        onSaved={fetchAll}
+      />
 
       <Modal
         title="Generated YAML Preview"
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
-        width={960}
+        width={1000}
+        destroyOnHidden
       >
-        <Input.TextArea value={previewYaml} rows={26} readOnly style={{ fontFamily: "monospace" }} />
+        {previewDiagnostics ? (
+          <Space direction="vertical" style={{ display: "flex", marginBottom: 12 }}>
+            <Typography.Text type="secondary">
+              stale subscriptions:{" "}
+              {previewDiagnostics.stale_subscription_ids.length
+                ? previewDiagnostics.stale_subscription_ids.join(", ")
+                : "none"}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              stale rules:{" "}
+              {previewDiagnostics.stale_rule_ids.length
+                ? previewDiagnostics.stale_rule_ids.join(", ")
+                : "none"}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              warnings:{" "}
+              {previewDiagnostics.warnings.length
+                ? previewDiagnostics.warnings.join(" | ")
+                : "none"}
+            </Typography.Text>
+          </Space>
+        ) : null}
+        <Input.TextArea
+          value={previewYaml}
+          rows={26}
+          readOnly
+          style={{ fontFamily: "monospace" }}
+        />
       </Modal>
     </Space>
   );
