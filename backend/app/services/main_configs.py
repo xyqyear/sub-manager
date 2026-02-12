@@ -52,7 +52,7 @@ async def _assert_unique_config_name(db: AsyncSession, name: str, exclude_id: st
         raise ServiceError(f"main config name already exists: {name}", 409)
 
 
-def _validate_base_yaml(base_config_yaml: str) -> None:
+def validate_base_yaml(base_config_yaml: str) -> None:
     try:
         parsed = yaml.safe_load(base_config_yaml)
     except yaml.YAMLError as exc:
@@ -84,7 +84,7 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
 
 async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> MainConfig:
     await _assert_unique_config_name(db, payload.name)
-    _validate_base_yaml(payload.base_config_yaml)
+    validate_base_yaml(payload.base_config_yaml)
 
     config = MainConfig(
         name=payload.name,
@@ -110,7 +110,7 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
         config.password_plain = payload.password_plain
 
     if payload.base_config_yaml is not None:
-        _validate_base_yaml(payload.base_config_yaml)
+        validate_base_yaml(payload.base_config_yaml)
         config.base_config_yaml = payload.base_config_yaml
 
     if payload.enabled is not None:
@@ -145,7 +145,7 @@ async def delete_main_config(db: AsyncSession, config: MainConfig) -> None:
     await db.commit()
 
 
-async def _validate_builder_refs(db: AsyncSession, payload: BuilderPayload) -> None:
+async def validate_builder_refs(db: AsyncSession, payload: BuilderPayload) -> None:
     subscription_ids = {
         rule.subscription_source_id
         for group in payload.filtered_groups
@@ -169,7 +169,7 @@ async def _validate_builder_refs(db: AsyncSession, payload: BuilderPayload) -> N
             raise ServiceError(f"unknown rule_source_id: {sorted(missing)}", 422)
 
 
-def _validate_builder_shapes(payload: BuilderPayload) -> None:
+def validate_builder_shapes(payload: BuilderPayload) -> None:
     filtered_names = [item.name for item in payload.filtered_groups]
     manual_names = [item.name for item in payload.manual_groups]
     all_group_names = filtered_names + manual_names
@@ -354,8 +354,8 @@ async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
 
 
 async def replace_builder(db: AsyncSession, config_id: str, payload: BuilderPayload) -> BuilderRead:
-    await _validate_builder_refs(db, payload)
-    _validate_builder_shapes(payload)
+    await validate_builder_refs(db, payload)
+    validate_builder_shapes(payload)
 
     fg_result = await db.execute(
         select(FilteredGroup).where(FilteredGroup.main_config_id == config_id)

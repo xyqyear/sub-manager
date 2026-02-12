@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.schemas.configs import (
     BuilderPayload,
     BuilderRead,
+    DraftPreviewRequest,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
     GenerationDiagnostics,
@@ -17,7 +18,7 @@ from app.schemas.configs import (
     PreviewWithDiagnosticsResponse,
 )
 from app.services.common import GenerationError, ServiceError
-from app.services.generator import generate_config_yaml
+from app.services.generator import generate_config_yaml, generate_config_yaml_from_draft
 from app.services.main_configs import (
     create_main_config,
     delete_main_config,
@@ -27,6 +28,9 @@ from app.services.main_configs import (
     preview_filtered_group_matches,
     replace_builder,
     update_main_config,
+    validate_base_yaml,
+    validate_builder_refs,
+    validate_builder_shapes,
 )
 from app.services.refresh_loop import refresh_loop_manager
 
@@ -75,6 +79,35 @@ async def preview_filtered_groups_endpoint(
         return await preview_filtered_group_matches(db, payload)
     except ServiceError as exc:
         raise _to_http_error(exc)
+
+
+@router.post("/preview-draft", response_model=PreviewWithDiagnosticsResponse)
+async def preview_draft_endpoint(
+    payload: DraftPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> PreviewWithDiagnosticsResponse:
+    try:
+        validate_base_yaml(payload.base_config_yaml)
+        validate_builder_shapes(payload.builder)
+        await validate_builder_refs(db, payload.builder)
+        generated_yaml, diagnostics = await generate_config_yaml_from_draft(
+            db,
+            payload,
+            enqueue_subscription_refresh=refresh_loop_manager.enqueue_subscription_refresh,
+            enqueue_rule_refresh=refresh_loop_manager.enqueue_rule_refresh,
+        )
+        return PreviewWithDiagnosticsResponse(
+            yaml=generated_yaml,
+            diagnostics=GenerationDiagnostics(
+                stale_subscription_ids=diagnostics.stale_subscription_ids,
+                stale_rule_ids=diagnostics.stale_rule_ids,
+                warnings=diagnostics.warnings,
+            ),
+        )
+    except ServiceError as exc:
+        raise _to_http_error(exc)
+    except GenerationError as exc:
+        raise _to_gen_http_error(exc)
 
 
 @router.put("/{config_id}", response_model=MainConfigRead)

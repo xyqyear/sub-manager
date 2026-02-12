@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Row,
   Select,
@@ -25,6 +26,7 @@ import type {
   FilteredGroupPreviewResponse,
   GroupMode,
   MainConfig,
+  PreviewResponse,
   RuleSource,
   SubscriptionSource,
 } from "@/types/api";
@@ -176,6 +178,10 @@ export default function MainConfigEditorDrawer({
   const [loadingBuilder, setLoadingBuilder] = useState(false);
   const [filteredGroupPreviews, setFilteredGroupPreviews] =
     useState<FilteredGroupPreviewResponse["groups"]>([]);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewYaml, setPreviewYaml] = useState("");
+  const [previewDiagnostics, setPreviewDiagnostics] = useState<PreviewResponse["diagnostics"] | null>(null);
 
   const finalTargetType = Form.useWatch("final_target_type", form);
   const filteredGroupsWatch = Form.useWatch("filtered_groups", form);
@@ -331,6 +337,36 @@ export default function MainConfigEditorDrawer({
     void init();
   }, [config, form, open, queueFilteredGroupPreview]);
 
+  const handlePreview = async () => {
+    try {
+      const values = form.getFieldsValue(true) as EditorFormValues;
+      setPreviewing(true);
+      const builder = normalizeBuilderPayload(values);
+      const payload = {
+        base_config_yaml: values.base_config_yaml,
+        password_plain: values.password_plain,
+        final_target_type: values.final_target_type,
+        final_target_group_name:
+          values.final_target_type === "group"
+            ? values.final_target_group_name ?? null
+            : null,
+        config_id: config?.id ?? null,
+        builder,
+      };
+      const response = await api.post<PreviewResponse>(
+        "/admin/main-configs/preview-draft",
+        payload,
+      );
+      setPreviewYaml(response.data.yaml);
+      setPreviewDiagnostics(response.data.diagnostics);
+      setPreviewOpen(true);
+    } catch (error) {
+      void message.error(errorDetail(error));
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const submit = async () => {
     try {
       const values = await form.validateFields();
@@ -385,6 +421,9 @@ export default function MainConfigEditorDrawer({
       destroyOnHidden
       extra={
         <Space>
+          <Button onClick={() => void handlePreview()} loading={previewing}>
+            Preview
+          </Button>
           <Button onClick={onClose}>Cancel</Button>
           <Button type="primary" loading={saving || loadingBuilder} onClick={() => void submit()}>
             Save
@@ -964,6 +1003,44 @@ export default function MainConfigEditorDrawer({
           )}
         </Form.List>
       </Form>
+
+      <Modal
+        title="Generated YAML Preview"
+        open={previewOpen}
+        onCancel={() => setPreviewOpen(false)}
+        footer={null}
+        width={1000}
+        destroyOnHidden
+      >
+        {previewDiagnostics ? (
+          <Space direction="vertical" style={{ display: "flex", marginBottom: 12 }}>
+            <Typography.Text type="secondary">
+              stale subscriptions:{" "}
+              {previewDiagnostics.stale_subscription_ids.length
+                ? previewDiagnostics.stale_subscription_ids.join(", ")
+                : "none"}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              stale rules:{" "}
+              {previewDiagnostics.stale_rule_ids.length
+                ? previewDiagnostics.stale_rule_ids.join(", ")
+                : "none"}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              warnings:{" "}
+              {previewDiagnostics.warnings.length
+                ? previewDiagnostics.warnings.join(" | ")
+                : "none"}
+            </Typography.Text>
+          </Space>
+        ) : null}
+        <Input.TextArea
+          value={previewYaml}
+          rows={26}
+          readOnly
+          style={{ fontFamily: "monospace" }}
+        />
+      </Modal>
     </Drawer>
   );
 }

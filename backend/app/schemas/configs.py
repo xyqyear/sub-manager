@@ -156,5 +156,14 @@ class PreviewWithDiagnosticsResponse(BaseModel):
     diagnostics: GenerationDiagnostics
 
 
+class DraftPreviewRequest(BaseModel):
+    base_config_yaml: str
+    password_plain: str
+    final_target_type: FinalTargetType = "DIRECT"
+    final_target_group_name: str | None = None
+    config_id: str | None = None
+    builder: BuilderPayload
+
+
 class PasswordQuery(BaseModel):
     password: str
