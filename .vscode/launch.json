@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Uvicorn",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "cwd": "${workspaceFolder}/backend",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5678",
+        "--log-level",
+        "debug"
+      ],
+      "justMyCode": true
+    },
+    {
+      "name": "Frontend: Chrome (Vite)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}/frontend",
+      "preLaunchTask": "Frontend: Dev Server",
+      "postDebugTask": "Frontend: Stop Dev Server"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack Debug",
+      "configurations": [
+        "Backend: Uvicorn",
+        "Frontend: Chrome (Vite)"
+      ]
+    }
+  ]
+}
