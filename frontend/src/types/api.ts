@@ -105,3 +105,13 @@ export interface PreviewResponse {
     warnings: string[];
   };
 }
+
+export interface FilteredGroupPreviewItem {
+  name: string;
+  matched_proxy_names: string[];
+  issues: string[];
+}
+
+export interface FilteredGroupPreviewResponse {
+  groups: FilteredGroupPreviewItem[];
+}

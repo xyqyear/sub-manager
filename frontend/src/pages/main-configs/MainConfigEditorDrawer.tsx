@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -12,12 +13,14 @@ import {
   Select,
   Space,
   Switch,
+  Tag,
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   BuilderState,
+  FilteredGroupPreviewResponse,
   GroupMode,
   MainConfig,
   RuleSource,
@@ -73,6 +76,18 @@ function normalizeNumber(value: number | null | undefined, fallback: number): nu
     return fallback;
   }
   return Number(value);
+}
+
+function errorDetail(error: unknown): string {
+  const response = (error as { response?: { data?: { detail?: unknown } } })?.response;
+  const detail = response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 function normalizeBuilderPayload(values: EditorFormValues): BuilderState {
@@ -132,6 +147,8 @@ export default function MainConfigEditorDrawer({
   const [form] = Form.useForm<EditorFormValues>();
   const [saving, setSaving] = useState(false);
   const [loadingBuilder, setLoadingBuilder] = useState(false);
+  const [filteredGroupPreviews, setFilteredGroupPreviews] =
+    useState<FilteredGroupPreviewResponse["groups"]>([]);
 
   const finalTargetType = Form.useWatch("final_target_type", form);
   const filteredGroupsWatch = Form.useWatch("filtered_groups", form);
@@ -165,6 +182,70 @@ export default function MainConfigEditorDrawer({
     [manualGroupsWatch],
   );
 
+  const triggerFilteredGroupPreview = useCallback(
+    async (valuesOverride?: Partial<EditorFormValues>) => {
+      if (!open) {
+        setFilteredGroupPreviews([]);
+        return;
+      }
+
+      const values =
+        valuesOverride ??
+        (form.getFieldsValue([
+          "subscription_links",
+          "filtered_groups",
+        ]) as Partial<EditorFormValues>);
+      const filteredGroups = values.filtered_groups ?? [];
+      if (!filteredGroups.length) {
+        setFilteredGroupPreviews([]);
+        return;
+      }
+
+      const payload = {
+        subscription_links: (values.subscription_links ?? []).map((item, index) => ({
+          subscription_source_id: item.subscription_source_id || null,
+          position: normalizeNumber(item.position, index + 1),
+        })),
+        filtered_groups: filteredGroups.map((group) => ({
+          name: group.name || null,
+          rules: (group.rules ?? []).map((rule, index) => ({
+            subscription_source_id: rule.subscription_source_id || null,
+            regex_pattern: rule.regex_pattern || null,
+            regex_flags: rule.regex_flags ?? "",
+            position: normalizeNumber(rule.position, index + 1),
+          })),
+        })),
+      };
+
+      try {
+        const response = await api.post<FilteredGroupPreviewResponse>(
+          "/admin/main-configs/filtered-groups/preview",
+          payload,
+        );
+        setFilteredGroupPreviews(response.data.groups);
+      } catch (error: unknown) {
+        const detail = errorDetail(error);
+        setFilteredGroupPreviews(
+          filteredGroups.map((group, index) => ({
+            name: group.name || `Filtered Group #${index + 1}`,
+            matched_proxy_names: [],
+            issues: [detail],
+          })),
+        );
+      }
+    },
+    [form, open],
+  );
+
+  const queueFilteredGroupPreview = useCallback(
+    (valuesOverride?: Partial<EditorFormValues>) => {
+      window.setTimeout(() => {
+        void triggerFilteredGroupPreview(valuesOverride);
+      }, 0);
+    },
+    [triggerFilteredGroupPreview],
+  );
+
   useEffect(() => {
     if (!open) {
       return;
@@ -174,6 +255,7 @@ export default function MainConfigEditorDrawer({
       if (!config) {
         form.resetFields();
         form.setFieldsValue(defaultValues);
+        queueFilteredGroupPreview(defaultValues);
         return;
       }
 
@@ -184,7 +266,7 @@ export default function MainConfigEditorDrawer({
         );
 
         form.resetFields();
-        form.setFieldsValue({
+        const nextValues: EditorFormValues = {
           ...defaultValues,
           ...builderResponse.data,
           name: config.name,
@@ -193,11 +275,13 @@ export default function MainConfigEditorDrawer({
           enabled: config.enabled,
           final_target_type: config.final_target_type,
           final_target_group_name: config.final_target_group_name ?? "",
-        });
+        };
+        form.setFieldsValue(nextValues);
+        queueFilteredGroupPreview(nextValues);
       } catch (error) {
         void message.error(String(error));
         form.resetFields();
-        form.setFieldsValue({
+        const fallbackValues: EditorFormValues = {
           ...defaultValues,
           name: config.name,
           password_plain: config.password_plain,
@@ -205,14 +289,16 @@ export default function MainConfigEditorDrawer({
           enabled: config.enabled,
           final_target_type: config.final_target_type,
           final_target_group_name: config.final_target_group_name ?? "",
-        });
+        };
+        form.setFieldsValue(fallbackValues);
+        queueFilteredGroupPreview(fallbackValues);
       } finally {
         setLoadingBuilder(false);
       }
     };
 
     void init();
-  }, [config, form, open]);
+  }, [config, form, open, queueFilteredGroupPreview]);
 
   const submit = async () => {
     try {
@@ -358,6 +444,7 @@ export default function MainConfigEditorDrawer({
                             value: item.id,
                           }))}
                           showSearch
+                          onBlur={() => void triggerFilteredGroupPreview()}
                         />
                       </Form.Item>
                     </Col>
@@ -367,12 +454,22 @@ export default function MainConfigEditorDrawer({
                         label="Position"
                         rules={[{ required: true }]}
                       >
-                        <InputNumber min={1} style={{ width: "100%" }} />
+                        <InputNumber
+                          min={1}
+                          style={{ width: "100%" }}
+                          onBlur={() => void triggerFilteredGroupPreview()}
+                        />
                       </Form.Item>
                     </Col>
                     <Col span={4}>
                       <Form.Item label=" ">
-                        <Button danger onClick={() => remove(field.name)}>
+                        <Button
+                          danger
+                          onClick={() => {
+                            remove(field.name);
+                            queueFilteredGroupPreview();
+                          }}
+                        >
                           Remove
                         </Button>
                       </Form.Item>
@@ -381,12 +478,13 @@ export default function MainConfigEditorDrawer({
                 </Card>
               ))}
               <Button
-                onClick={() =>
+                onClick={() => {
                   add({
                     subscription_source_id: "",
                     position: fields.length + 1,
-                  })
-                }
+                  });
+                  queueFilteredGroupPreview();
+                }}
               >
                 Add Subscription Source
               </Button>
@@ -404,7 +502,13 @@ export default function MainConfigEditorDrawer({
                   key={field.key}
                   title={`Filtered Group #${field.name + 1}`}
                   extra={
-                    <Popconfirm title="Remove this filtered group?" onConfirm={() => remove(field.name)}>
+                    <Popconfirm
+                      title="Remove this filtered group?"
+                      onConfirm={() => {
+                        remove(field.name);
+                        queueFilteredGroupPreview();
+                      }}
+                    >
                       <Button danger size="small">
                         Remove
                       </Button>
@@ -418,7 +522,7 @@ export default function MainConfigEditorDrawer({
                         label="Group Name"
                         rules={[{ required: true }]}
                       >
-                        <Input />
+                        <Input onBlur={() => void triggerFilteredGroupPreview()} />
                       </Form.Item>
                     </Col>
                     <Col span={4}>
@@ -427,7 +531,11 @@ export default function MainConfigEditorDrawer({
                         label="Position"
                         rules={[{ required: true }]}
                       >
-                        <InputNumber min={1} style={{ width: "100%" }} />
+                        <InputNumber
+                          min={1}
+                          style={{ width: "100%" }}
+                          onBlur={() => void triggerFilteredGroupPreview()}
+                        />
                       </Form.Item>
                     </Col>
                     <Col span={6}>
@@ -467,6 +575,7 @@ export default function MainConfigEditorDrawer({
                                       label: item.name,
                                       value: item.id,
                                     }))}
+                                    onBlur={() => void triggerFilteredGroupPreview()}
                                   />
                                 </Form.Item>
                               </Col>
@@ -476,12 +585,15 @@ export default function MainConfigEditorDrawer({
                                   label="Regex"
                                   rules={[{ required: true }]}
                                 >
-                                  <Input />
+                                  <Input onBlur={() => void triggerFilteredGroupPreview()} />
                                 </Form.Item>
                               </Col>
                               <Col span={4}>
                                 <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags">
-                                  <Input placeholder="i" />
+                                  <Input
+                                    placeholder="i"
+                                    onBlur={() => void triggerFilteredGroupPreview()}
+                                  />
                                 </Form.Item>
                               </Col>
                               <Col span={2}>
@@ -490,12 +602,22 @@ export default function MainConfigEditorDrawer({
                                   label="Pos"
                                   rules={[{ required: true }]}
                                 >
-                                  <InputNumber min={1} style={{ width: "100%" }} />
+                                  <InputNumber
+                                    min={1}
+                                    style={{ width: "100%" }}
+                                    onBlur={() => void triggerFilteredGroupPreview()}
+                                  />
                                 </Form.Item>
                               </Col>
                               <Col span={2}>
                                 <Form.Item label=" ">
-                                  <Button danger onClick={() => ruleOps.remove(ruleField.name)}>
+                                  <Button
+                                    danger
+                                    onClick={() => {
+                                      ruleOps.remove(ruleField.name);
+                                      queueFilteredGroupPreview();
+                                    }}
+                                  >
                                     Del
                                   </Button>
                                 </Form.Item>
@@ -504,24 +626,49 @@ export default function MainConfigEditorDrawer({
                           </Card>
                         ))}
                         <Button
-                          onClick={() =>
+                          onClick={() => {
                             ruleOps.add({
                               subscription_source_id: "",
                               regex_pattern: ".*",
                               regex_flags: "",
                               position: ruleFields.length + 1,
-                            })
-                          }
+                            });
+                            queueFilteredGroupPreview();
+                          }}
                         >
                           Add Filter Rule
                         </Button>
                       </Space>
                     )}
                   </Form.List>
+
+                  <Divider style={{ margin: "12px 0" }} />
+                  <Space direction="vertical" style={{ display: "flex" }}>
+                    <Typography.Text strong>
+                      Matched Proxies Preview
+                    </Typography.Text>
+                    {filteredGroupPreviews[field.name]?.issues.length ? (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message={filteredGroupPreviews[field.name]?.issues.join(" | ")}
+                      />
+                    ) : null}
+                    <Space wrap>
+                      {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).map((name) => (
+                        <Tag key={name}>{name}</Tag>
+                      ))}
+                    </Space>
+                    {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).length === 0 ? (
+                      <Typography.Text type="secondary">
+                        No matched proxies in current cache.
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
                 </Card>
               ))}
               <Button
-                onClick={() =>
+                onClick={() => {
                   add({
                     name: "",
                     position: fields.length + 1,
@@ -529,8 +676,9 @@ export default function MainConfigEditorDrawer({
                     test_url: "",
                     test_interval_sec: 300,
                     rules: [],
-                  })
-                }
+                  });
+                  queueFilteredGroupPreview();
+                }}
               >
                 Add Filtered Group
               </Button>

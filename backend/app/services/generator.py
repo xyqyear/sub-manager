@@ -63,6 +63,72 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
     return out
 
 
+def build_proxy_pool_with_collision_names(
+    ordered_sources: list[tuple[str, str, list[dict]]],
+) -> tuple[list[dict], dict[str, list[dict]], dict[str, list[str]]]:
+    proxy_pool: list[dict] = []
+    proxies_by_source: dict[str, list[dict]] = {}
+
+    for source_id, source_name, cached_proxies in ordered_sources:
+        source_entries: list[dict] = []
+        for idx, proxy in enumerate(cached_proxies):
+            if not isinstance(proxy, dict):
+                continue
+
+            proxy_copy = dict(proxy)
+            raw_name = proxy_copy.get("name")
+            if not isinstance(raw_name, str) or not raw_name.strip():
+                raw_name = f"proxy-{idx + 1}"
+
+            proxy_copy["__raw_name"] = raw_name
+            proxy_copy["__source_id"] = source_id
+            proxy_copy["__source_name"] = source_name
+            source_entries.append(proxy_copy)
+            proxy_pool.append(proxy_copy)
+
+        proxies_by_source[source_id] = source_entries
+
+    used_names: set[str] = set()
+    raw_to_final: dict[str, list[str]] = {}
+
+    for proxy in proxy_pool:
+        raw_name = str(proxy.get("__raw_name", "proxy"))
+        source_slug = slugify_name(str(proxy.get("__source_name", "source")))
+
+        candidate = raw_name
+        if candidate in used_names:
+            candidate = f"{raw_name}@{source_slug}"
+
+        if candidate in used_names:
+            suffix = 2
+            while f"{candidate}#{suffix}" in used_names:
+                suffix += 1
+            candidate = f"{candidate}#{suffix}"
+
+        proxy["name"] = candidate
+        used_names.add(candidate)
+        raw_to_final.setdefault(raw_name, []).append(candidate)
+
+    return proxy_pool, proxies_by_source, raw_to_final
+
+
+def match_filtered_rules_on_proxies(
+    rules: list[tuple[str, str, str]],
+    proxies_by_source: dict[str, list[dict]],
+) -> list[str]:
+    matched_names: list[str] = []
+    for source_id, regex_pattern, regex_flags in rules:
+        flags = re.IGNORECASE if "i" in regex_flags else 0
+        pattern = re.compile(regex_pattern, flags)
+        for proxy in proxies_by_source.get(source_id, []):
+            name = str(proxy.get("name", ""))
+            raw_name = str(proxy.get("__raw_name", ""))
+            if pattern.search(name) or pattern.search(raw_name):
+                matched_names.append(name)
+
+    return _dedupe_keep_order(matched_names)
+
+
 async def _load_builder_state(db: AsyncSession, config_id: str) -> dict:
     links_result = await db.execute(
         select(MainConfigSubscriptionLink)
@@ -165,8 +231,7 @@ async def generate_config_yaml(
     links = state["links"]
     sub_map: dict[str, SubscriptionSource] = state["sub_map"]
 
-    proxy_pool: list[dict] = []
-    proxies_by_source: dict[str, list[dict]] = {}
+    ordered_sources: list[tuple[str, str, list[dict]]] = []
 
     for link in links:
         source = sub_map.get(link.subscription_source_id)
@@ -187,41 +252,13 @@ async def generate_config_yaml(
                 409,
             )
 
-        source_entries: list[dict] = []
-        for idx, proxy in enumerate(source.cached_proxies_json):
-            if not isinstance(proxy, dict):
-                continue
-            proxy_copy = dict(proxy)
-            raw_name = proxy_copy.get("name")
-            if not isinstance(raw_name, str) or not raw_name.strip():
-                raw_name = f"proxy-{idx + 1}"
-            proxy_copy["__raw_name"] = raw_name
-            proxy_copy["__source_id"] = source.id
-            proxy_copy["__source_name"] = source.name
-            source_entries.append(proxy_copy)
-            proxy_pool.append(proxy_copy)
-        proxies_by_source[source.id] = source_entries
+        ordered_sources.append(
+            (source.id, source.name, source.cached_proxies_json),
+        )
 
-    used_names: set[str] = set()
-    raw_to_final: dict[str, list[str]] = {}
-
-    for proxy in proxy_pool:
-        raw_name = str(proxy.get("__raw_name", "proxy"))
-        source_slug = slugify_name(str(proxy.get("__source_name", "source")))
-
-        candidate = raw_name
-        if candidate in used_names:
-            candidate = f"{raw_name}@{source_slug}"
-
-        if candidate in used_names:
-            suffix = 2
-            while f"{candidate}#{suffix}" in used_names:
-                suffix += 1
-            candidate = f"{candidate}#{suffix}"
-
-        proxy["name"] = candidate
-        used_names.add(candidate)
-        raw_to_final.setdefault(raw_name, []).append(candidate)
+    proxy_pool, proxies_by_source, raw_to_final = build_proxy_pool_with_collision_names(
+        ordered_sources
+    )
 
     filtered_groups = state["filtered_groups"]
     filtered_rules = state["filtered_rules"]
@@ -233,18 +270,17 @@ async def generate_config_yaml(
     filtered_group_members: dict[str, list[str]] = {}
 
     for group in filtered_groups:
-        members: list[str] = []
-        for rule in fg_rules_map.get(group.id, []):
-            source_entries = proxies_by_source.get(rule.subscription_source_id, [])
-            flags = re.IGNORECASE if "i" in rule.regex_flags else 0
-            pattern = re.compile(rule.regex_pattern, flags)
-            for proxy in source_entries:
-                name = str(proxy.get("name", ""))
-                raw_name = str(proxy.get("__raw_name", ""))
-                if pattern.search(name) or pattern.search(raw_name):
-                    members.append(name)
-
-        members = _dedupe_keep_order(members)
+        members = match_filtered_rules_on_proxies(
+            [
+                (
+                    rule.subscription_source_id,
+                    rule.regex_pattern,
+                    rule.regex_flags,
+                )
+                for rule in fg_rules_map.get(group.id, [])
+            ],
+            proxies_by_source,
+        )
         if not members:
             raise GenerationError(f"filtered group has no matched proxies: {group.name}", 422)
 

@@ -8,6 +8,8 @@ from app.db.database import get_db
 from app.schemas.configs import (
     BuilderPayload,
     BuilderRead,
+    FilteredGroupPreviewRequest,
+    FilteredGroupPreviewResponse,
     GenerationDiagnostics,
     MainConfigCreate,
     MainConfigRead,
@@ -22,6 +24,7 @@ from app.services.main_configs import (
     get_builder,
     get_main_config_or_404,
     list_main_configs,
+    preview_filtered_group_matches,
     replace_builder,
     update_main_config,
 )
@@ -56,6 +59,20 @@ async def create_main_config_endpoint(
     try:
         row = await create_main_config(db, payload)
         return MainConfigRead.model_validate(row)
+    except ServiceError as exc:
+        raise _to_http_error(exc)
+
+
+@router.post(
+    "/filtered-groups/preview",
+    response_model=FilteredGroupPreviewResponse,
+)
+async def preview_filtered_groups_endpoint(
+    payload: FilteredGroupPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> FilteredGroupPreviewResponse:
+    try:
+        return await preview_filtered_group_matches(db, payload)
     except ServiceError as exc:
         raise _to_http_error(exc)
 

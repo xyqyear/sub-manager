@@ -109,6 +109,38 @@ class BuilderRead(BaseModel):
     shunt_bindings: list[ShuntBindingPayload]
 
 
+class FilteredGroupPreviewSubscriptionLinkPayload(BaseModel):
+    subscription_source_id: str | None = None
+    position: int | None = None
+
+
+class FilteredGroupPreviewRulePayload(BaseModel):
+    subscription_source_id: str | None = None
+    regex_pattern: str | None = None
+    regex_flags: str = ""
+    position: int | None = None
+
+
+class FilteredGroupPreviewGroupPayload(BaseModel):
+    name: str | None = None
+    rules: list[FilteredGroupPreviewRulePayload] = []
+
+
+class FilteredGroupPreviewRequest(BaseModel):
+    subscription_links: list[FilteredGroupPreviewSubscriptionLinkPayload] = []
+    filtered_groups: list[FilteredGroupPreviewGroupPayload] = []
+
+
+class FilteredGroupPreviewItem(BaseModel):
+    name: str
+    matched_proxy_names: list[str]
+    issues: list[str]
+
+
+class FilteredGroupPreviewResponse(BaseModel):
+    groups: list[FilteredGroupPreviewItem]
+
+
 class PreviewResponse(BaseModel):
     yaml: str
     diagnostics: list[str]
