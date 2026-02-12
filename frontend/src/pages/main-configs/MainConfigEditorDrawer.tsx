@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   Divider,
   Drawer,
   Form,
@@ -17,7 +18,8 @@ import {
   Typography,
   message,
 } from "antd";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { DownOutlined, UpOutlined } from "@ant-design/icons";
+import { type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   BuilderState,
   FilteredGroupPreviewResponse,
@@ -29,7 +31,7 @@ import type {
 import api from "@/utils/api";
 
 type FinalTargetType = "DIRECT" | "REJECT" | "group";
-type ManualMemberType = "filtered_group" | "manual_group" | "proxy_name";
+type ManualMemberType = "filtered_group" | "manual_group";
 
 interface MainConfigEditorDrawerProps {
   open: boolean;
@@ -58,7 +60,6 @@ const defaultValues: EditorFormValues = {
   enabled: true,
   final_target_type: "DIRECT",
   final_target_group_name: "",
-  subscription_links: [],
   filtered_groups: [],
   manual_groups: [],
   dialer_override_rules: [],
@@ -70,13 +71,6 @@ const groupModeOptions: { label: string; value: GroupMode }[] = [
   { label: "fallback", value: "fallback" },
   { label: "url-test", value: "url-test" },
 ];
-
-function normalizeNumber(value: number | null | undefined, fallback: number): number {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return fallback;
-  }
-  return Number(value);
-}
 
 function errorDetail(error: unknown): string {
   const response = (error as { response?: { data?: { detail?: unknown } } })?.response;
@@ -90,15 +84,49 @@ function errorDetail(error: unknown): string {
   return String(error);
 }
 
+type MoveControlsProps = {
+  index: number;
+  total: number;
+  onMove: (from: number, to: number) => void;
+};
+
+function MoveControls({ index, total, onMove }: MoveControlsProps) {
+  const handleMove =
+    (offset: -1 | 1) =>
+    (event: MouseEvent<HTMLElement>) => {
+      event.stopPropagation();
+      const nextIndex = index + offset;
+      if (nextIndex < 0 || nextIndex >= total) {
+        return;
+      }
+      onMove(index, nextIndex);
+    };
+
+  return (
+    <Space.Compact>
+      <Button
+        type="text"
+        size="small"
+        icon={<UpOutlined />}
+        disabled={index === 0}
+        onClick={handleMove(-1)}
+      />
+      <Button
+        type="text"
+        size="small"
+        icon={<DownOutlined />}
+        disabled={index >= total - 1}
+        onClick={handleMove(1)}
+      />
+    </Space.Compact>
+  );
+}
+
 function normalizeBuilderPayload(values: EditorFormValues): BuilderState {
   return {
-    subscription_links: (values.subscription_links ?? []).map((item, index) => ({
-      subscription_source_id: item.subscription_source_id,
-      position: normalizeNumber(item.position, index + 1),
-    })),
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
-      position: normalizeNumber(group.position, groupIndex + 1),
+      position: groupIndex + 1,
       group_mode: group.group_mode,
       test_url: group.test_url ?? null,
       test_interval_sec: group.test_interval_sec ?? null,
@@ -106,28 +134,27 @@ function normalizeBuilderPayload(values: EditorFormValues): BuilderState {
         subscription_source_id: rule.subscription_source_id,
         regex_pattern: rule.regex_pattern,
         regex_flags: rule.regex_flags,
-        position: normalizeNumber(rule.position, ruleIndex + 1),
+        position: ruleIndex + 1,
       })),
     })),
     manual_groups: (values.manual_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
-      position: normalizeNumber(group.position, groupIndex + 1),
+      position: groupIndex + 1,
       group_mode: group.group_mode,
       test_url: group.test_url ?? null,
       test_interval_sec: group.test_interval_sec ?? null,
       members: (group.members ?? []).map((member, memberIndex) => ({
         member_type: member.member_type,
         member_ref: member.member_ref,
-        position: normalizeNumber(member.position, memberIndex + 1),
+        position: memberIndex + 1,
       })),
     })),
-    dialer_override_rules: (values.dialer_override_rules ?? []).map((item, index) => ({
-      match_regex: item.match_regex,
+    dialer_override_rules: (values.dialer_override_rules ?? []).map((item) => ({
+      filtered_group_name: item.filtered_group_name,
       dialer_group_name: item.dialer_group_name,
-      position: normalizeNumber(item.position, index + 1),
     })),
     shunt_bindings: (values.shunt_bindings ?? []).map((item, index) => ({
-      position: normalizeNumber(item.position, index + 1),
+      position: index + 1,
       binding_name: item.binding_name,
       rule_source_id: item.rule_source_id,
       default_group_name: item.default_group_name,
@@ -192,7 +219,6 @@ export default function MainConfigEditorDrawer({
       const values =
         valuesOverride ??
         (form.getFieldsValue([
-          "subscription_links",
           "filtered_groups",
         ]) as Partial<EditorFormValues>);
       const filteredGroups = values.filtered_groups ?? [];
@@ -202,17 +228,13 @@ export default function MainConfigEditorDrawer({
       }
 
       const payload = {
-        subscription_links: (values.subscription_links ?? []).map((item, index) => ({
-          subscription_source_id: item.subscription_source_id || null,
-          position: normalizeNumber(item.position, index + 1),
-        })),
         filtered_groups: filteredGroups.map((group) => ({
           name: group.name || null,
           rules: (group.rules ?? []).map((rule, index) => ({
             subscription_source_id: rule.subscription_source_id || null,
             regex_pattern: rule.regex_pattern || null,
             regex_flags: rule.regex_flags ?? "",
-            position: normalizeNumber(rule.position, index + 1),
+            position: index + 1,
           })),
         })),
       };
@@ -425,253 +447,192 @@ export default function MainConfigEditorDrawer({
         </Form.Item>
 
         <Divider />
-        <Typography.Title level={5}>Subscription Sources</Typography.Title>
-        <Form.List name="subscription_links">
-          {(fields, { add, remove }) => (
-            <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field) => (
-                <Card key={field.key} size="small">
-                  <Row gutter={12}>
-                    <Col span={14}>
-                      <Form.Item
-                        name={[field.name, "subscription_source_id"]}
-                        label="Subscription"
-                        rules={[{ required: true }]}
-                      >
-                        <Select
-                          options={subscriptions.map((item) => ({
-                            label: `${item.name} (${item.mode})`,
-                            value: item.id,
-                          }))}
-                          showSearch
-                          onBlur={() => void triggerFilteredGroupPreview()}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item
-                        name={[field.name, "position"]}
-                        label="Position"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber
-                          min={1}
-                          style={{ width: "100%" }}
-                          onBlur={() => void triggerFilteredGroupPreview()}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={4}>
-                      <Form.Item label=" ">
-                        <Button
-                          danger
-                          onClick={() => {
-                            remove(field.name);
-                            queueFilteredGroupPreview();
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Card>
-              ))}
-              <Button
-                onClick={() => {
-                  add({
-                    subscription_source_id: "",
-                    position: fields.length + 1,
-                  });
-                  queueFilteredGroupPreview();
-                }}
-              >
-                Add Subscription Source
-              </Button>
-            </Space>
-          )}
-        </Form.List>
-
-        <Divider />
         <Typography.Title level={5}>Filtered Groups</Typography.Title>
         <Form.List name="filtered_groups">
-          {(fields, { add, remove }) => (
+          {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field) => (
-                <Card
+              {fields.map((field, groupIndex) => (
+                <Collapse
                   key={field.key}
-                  title={`Filtered Group #${field.name + 1}`}
-                  extra={
-                    <Popconfirm
-                      title="Remove this filtered group?"
-                      onConfirm={() => {
-                        remove(field.name);
-                        queueFilteredGroupPreview();
-                      }}
-                    >
-                      <Button danger size="small">
-                        Remove
-                      </Button>
-                    </Popconfirm>
-                  }
-                >
-                  <Row gutter={12}>
-                    <Col span={8}>
-                      <Form.Item
-                        name={[field.name, "name"]}
-                        label="Group Name"
-                        rules={[{ required: true }]}
-                      >
-                        <Input onBlur={() => void triggerFilteredGroupPreview()} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={4}>
-                      <Form.Item
-                        name={[field.name, "position"]}
-                        label="Position"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber
-                          min={1}
-                          style={{ width: "100%" }}
-                          onBlur={() => void triggerFilteredGroupPreview()}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item
-                        name={[field.name, "group_mode"]}
-                        label="Mode"
-                        rules={[{ required: true }]}
-                      >
-                        <Select options={groupModeOptions} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
-                        <InputNumber min={1} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                  <Form.Item name={[field.name, "test_url"]} label="Test URL">
-                    <Input placeholder="https://www.gstatic.com/generate_204" />
-                  </Form.Item>
+                  defaultActiveKey={["content"]}
+                  items={[
+                    {
+                      key: "content",
+                      label:
+                        filteredGroupsWatch?.[field.name]?.name?.trim() ||
+                        `Filtered Group #${groupIndex + 1}`,
+                      extra: (
+                        <Space size={4}>
+                          <MoveControls
+                            index={groupIndex}
+                            total={fields.length}
+                            onMove={(from, to) => {
+                              move(from, to);
+                              queueFilteredGroupPreview();
+                            }}
+                          />
+                          <Popconfirm
+                            title="Remove this filtered group?"
+                            onConfirm={() => {
+                              remove(field.name);
+                              queueFilteredGroupPreview();
+                            }}
+                          >
+                            <Button
+                              danger
+                              size="small"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              Remove
+                            </Button>
+                          </Popconfirm>
+                        </Space>
+                      ),
+                      children: (
+                        <Space direction="vertical" style={{ display: "flex" }}>
+                          <Row gutter={12}>
+                            <Col span={10}>
+                              <Form.Item
+                                name={[field.name, "name"]}
+                                label="Group Name"
+                                rules={[{ required: true }]}
+                              >
+                                <Input onBlur={() => void triggerFilteredGroupPreview()} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={7}>
+                              <Form.Item
+                                name={[field.name, "group_mode"]}
+                                label="Mode"
+                                rules={[{ required: true }]}
+                              >
+                                <Select options={groupModeOptions} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={7}>
+                              <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
+                                <InputNumber min={1} style={{ width: "100%" }} />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Form.Item name={[field.name, "test_url"]} label="Test URL">
+                            <Input placeholder="https://www.gstatic.com/generate_204" />
+                          </Form.Item>
 
-                  <Form.List name={[field.name, "rules"]}>
-                    {(ruleFields, ruleOps) => (
-                      <Space direction="vertical" style={{ display: "flex" }}>
-                        <Typography.Text strong>Rules</Typography.Text>
-                        {ruleFields.map((ruleField) => (
-                          <Card key={ruleField.key} size="small">
-                            <Row gutter={12}>
-                              <Col span={8}>
-                                <Form.Item
-                                  name={[ruleField.name, "subscription_source_id"]}
-                                  label="Subscription"
-                                  rules={[{ required: true }]}
+                          <Form.List name={[field.name, "rules"]}>
+                            {(ruleFields, ruleOps) => (
+                              <Space direction="vertical" style={{ display: "flex" }}>
+                                <Typography.Text strong>Rules</Typography.Text>
+                                {ruleFields.map((ruleField, ruleIndex) => (
+                                  <Card key={ruleField.key} size="small">
+                                    <Row gutter={12}>
+                                      <Col span={8}>
+                                        <Form.Item
+                                          name={[ruleField.name, "subscription_source_id"]}
+                                          label="Subscription"
+                                          rules={[{ required: true }]}
+                                        >
+                                          <Select
+                                            options={subscriptions.map((item) => ({
+                                              label: item.name,
+                                              value: item.id,
+                                            }))}
+                                            onBlur={() => void triggerFilteredGroupPreview()}
+                                          />
+                                        </Form.Item>
+                                      </Col>
+                                      <Col span={8}>
+                                        <Form.Item
+                                          name={[ruleField.name, "regex_pattern"]}
+                                          label="Regex"
+                                          rules={[{ required: true }]}
+                                        >
+                                          <Input onBlur={() => void triggerFilteredGroupPreview()} />
+                                        </Form.Item>
+                                      </Col>
+                                      <Col span={4}>
+                                        <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags">
+                                          <Input
+                                            placeholder="i"
+                                            onBlur={() => void triggerFilteredGroupPreview()}
+                                          />
+                                        </Form.Item>
+                                      </Col>
+                                      <Col span={4}>
+                                        <Form.Item label=" ">
+                                          <Space size={4}>
+                                            <MoveControls
+                                              index={ruleIndex}
+                                              total={ruleFields.length}
+                                              onMove={(from, to) => {
+                                                ruleOps.move(from, to);
+                                                queueFilteredGroupPreview();
+                                              }}
+                                            />
+                                            <Button
+                                              danger
+                                              onClick={() => {
+                                                ruleOps.remove(ruleField.name);
+                                                queueFilteredGroupPreview();
+                                              }}
+                                            >
+                                              Del
+                                            </Button>
+                                          </Space>
+                                        </Form.Item>
+                                      </Col>
+                                    </Row>
+                                  </Card>
+                                ))}
+                                <Button
+                                  onClick={() => {
+                                    ruleOps.add({
+                                      subscription_source_id: "",
+                                      regex_pattern: ".*",
+                                      regex_flags: "",
+                                    });
+                                    queueFilteredGroupPreview();
+                                  }}
                                 >
-                                  <Select
-                                    options={subscriptions.map((item) => ({
-                                      label: item.name,
-                                      value: item.id,
-                                    }))}
-                                    onBlur={() => void triggerFilteredGroupPreview()}
-                                  />
-                                </Form.Item>
-                              </Col>
-                              <Col span={8}>
-                                <Form.Item
-                                  name={[ruleField.name, "regex_pattern"]}
-                                  label="Regex"
-                                  rules={[{ required: true }]}
-                                >
-                                  <Input onBlur={() => void triggerFilteredGroupPreview()} />
-                                </Form.Item>
-                              </Col>
-                              <Col span={4}>
-                                <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags">
-                                  <Input
-                                    placeholder="i"
-                                    onBlur={() => void triggerFilteredGroupPreview()}
-                                  />
-                                </Form.Item>
-                              </Col>
-                              <Col span={2}>
-                                <Form.Item
-                                  name={[ruleField.name, "position"]}
-                                  label="Pos"
-                                  rules={[{ required: true }]}
-                                >
-                                  <InputNumber
-                                    min={1}
-                                    style={{ width: "100%" }}
-                                    onBlur={() => void triggerFilteredGroupPreview()}
-                                  />
-                                </Form.Item>
-                              </Col>
-                              <Col span={2}>
-                                <Form.Item label=" ">
-                                  <Button
-                                    danger
-                                    onClick={() => {
-                                      ruleOps.remove(ruleField.name);
-                                      queueFilteredGroupPreview();
-                                    }}
-                                  >
-                                    Del
-                                  </Button>
-                                </Form.Item>
-                              </Col>
-                            </Row>
-                          </Card>
-                        ))}
-                        <Button
-                          onClick={() => {
-                            ruleOps.add({
-                              subscription_source_id: "",
-                              regex_pattern: ".*",
-                              regex_flags: "",
-                              position: ruleFields.length + 1,
-                            });
-                            queueFilteredGroupPreview();
-                          }}
-                        >
-                          Add Filter Rule
-                        </Button>
-                      </Space>
-                    )}
-                  </Form.List>
+                                  Add Filter Rule
+                                </Button>
+                              </Space>
+                            )}
+                          </Form.List>
 
-                  <Divider style={{ margin: "12px 0" }} />
-                  <Space direction="vertical" style={{ display: "flex" }}>
-                    <Typography.Text strong>
-                      Matched Proxies Preview
-                    </Typography.Text>
-                    {filteredGroupPreviews[field.name]?.issues.length ? (
-                      <Alert
-                        type="warning"
-                        showIcon
-                        message={filteredGroupPreviews[field.name]?.issues.join(" | ")}
-                      />
-                    ) : null}
-                    <Space wrap>
-                      {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).map((name) => (
-                        <Tag key={name}>{name}</Tag>
-                      ))}
-                    </Space>
-                    {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).length === 0 ? (
-                      <Typography.Text type="secondary">
-                        No matched proxies in current cache.
-                      </Typography.Text>
-                    ) : null}
-                  </Space>
-                </Card>
+                          <Divider style={{ margin: "12px 0" }} />
+                          <Space direction="vertical" style={{ display: "flex" }}>
+                            <Typography.Text strong>
+                              Matched Proxies Preview
+                            </Typography.Text>
+                            {filteredGroupPreviews[field.name]?.issues.length ? (
+                              <Alert
+                                type="warning"
+                                showIcon
+                                message={filteredGroupPreviews[field.name]?.issues.join(" | ")}
+                              />
+                            ) : null}
+                            <Space wrap>
+                              {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).map((name) => (
+                                <Tag key={name}>{name}</Tag>
+                              ))}
+                            </Space>
+                            {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).length === 0 ? (
+                              <Typography.Text type="secondary">
+                                No matched proxies in current cache.
+                              </Typography.Text>
+                            ) : null}
+                          </Space>
+                        </Space>
+                      ),
+                    },
+                  ]}
+                />
               ))}
               <Button
                 onClick={() => {
                   add({
                     name: "",
-                    position: fields.length + 1,
                     group_mode: "select",
                     test_url: "",
                     test_interval_sec: 300,
@@ -689,167 +650,170 @@ export default function MainConfigEditorDrawer({
         <Divider />
         <Typography.Title level={5}>Manual Groups</Typography.Title>
         <Form.List name="manual_groups">
-          {(fields, { add, remove }) => (
+          {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field) => (
-                <Card
+              {fields.map((field, groupIndex) => (
+                <Collapse
                   key={field.key}
-                  title={`Manual Group #${field.name + 1}`}
-                  extra={
-                    <Popconfirm title="Remove this manual group?" onConfirm={() => remove(field.name)}>
-                      <Button danger size="small">
-                        Remove
-                      </Button>
-                    </Popconfirm>
-                  }
-                >
-                  <Row gutter={12}>
-                    <Col span={8}>
-                      <Form.Item
-                        name={[field.name, "name"]}
-                        label="Group Name"
-                        rules={[{ required: true }]}
-                      >
-                        <Input />
-                      </Form.Item>
-                    </Col>
-                    <Col span={4}>
-                      <Form.Item
-                        name={[field.name, "position"]}
-                        label="Position"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber min={1} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item
-                        name={[field.name, "group_mode"]}
-                        label="Mode"
-                        rules={[{ required: true }]}
-                      >
-                        <Select options={groupModeOptions} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
-                        <InputNumber min={1} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                  <Form.Item name={[field.name, "test_url"]} label="Test URL">
-                    <Input placeholder="https://www.gstatic.com/generate_204" />
-                  </Form.Item>
+                  defaultActiveKey={["content"]}
+                  items={[
+                    {
+                      key: "content",
+                      label:
+                        manualGroupsWatch?.[field.name]?.name?.trim() ||
+                        `Manual Group #${groupIndex + 1}`,
+                      extra: (
+                        <Space size={4}>
+                          <MoveControls
+                            index={groupIndex}
+                            total={fields.length}
+                            onMove={move}
+                          />
+                          <Popconfirm
+                            title="Remove this manual group?"
+                            onConfirm={() => remove(field.name)}
+                          >
+                            <Button
+                              danger
+                              size="small"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              Remove
+                            </Button>
+                          </Popconfirm>
+                        </Space>
+                      ),
+                      children: (
+                        <Space direction="vertical" style={{ display: "flex" }}>
+                          <Row gutter={12}>
+                            <Col span={10}>
+                              <Form.Item
+                                name={[field.name, "name"]}
+                                label="Group Name"
+                                rules={[{ required: true }]}
+                              >
+                                <Input />
+                              </Form.Item>
+                            </Col>
+                            <Col span={7}>
+                              <Form.Item
+                                name={[field.name, "group_mode"]}
+                                label="Mode"
+                                rules={[{ required: true }]}
+                              >
+                                <Select options={groupModeOptions} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={7}>
+                              <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
+                                <InputNumber min={1} style={{ width: "100%" }} />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Form.Item name={[field.name, "test_url"]} label="Test URL">
+                            <Input placeholder="https://www.gstatic.com/generate_204" />
+                          </Form.Item>
 
-                  <Form.List name={[field.name, "members"]}>
-                    {(memberFields, memberOps) => (
-                      <Space direction="vertical" style={{ display: "flex" }}>
-                        <Typography.Text strong>Members</Typography.Text>
-                        {memberFields.map((memberField) => (
-                          <Card key={memberField.key} size="small">
-                            <Row gutter={12}>
-                              <Col span={6}>
-                                <Form.Item
-                                  name={[memberField.name, "member_type"]}
-                                  label="Type"
-                                  rules={[{ required: true }]}
-                                >
-                                  <Select
-                                    options={[
-                                      { label: "filtered_group", value: "filtered_group" },
-                                      { label: "manual_group", value: "manual_group" },
-                                      { label: "proxy_name", value: "proxy_name" },
-                                    ]}
-                                  />
-                                </Form.Item>
-                              </Col>
-                              <Col span={10}>
-                                <Form.Item noStyle shouldUpdate>
-                                  {() => {
-                                    const memberType = form.getFieldValue([
-                                      "manual_groups",
-                                      field.name,
-                                      "members",
-                                      memberField.name,
-                                      "member_type",
-                                    ]) as ManualMemberType | undefined;
-
-                                    if (memberType === "filtered_group") {
-                                      return (
+                          <Form.List name={[field.name, "members"]}>
+                            {(memberFields, memberOps) => (
+                              <Space direction="vertical" style={{ display: "flex" }}>
+                                <Typography.Text strong>Members</Typography.Text>
+                                {memberFields.map((memberField, memberIndex) => (
+                                  <Card key={memberField.key} size="small">
+                                    <Row gutter={12}>
+                                      <Col span={6}>
                                         <Form.Item
-                                          name={[memberField.name, "member_ref"]}
-                                          label="Member"
+                                          name={[memberField.name, "member_type"]}
+                                          label="Type"
                                           rules={[{ required: true }]}
                                         >
-                                          <Select options={filteredGroupOptions} showSearch />
+                                          <Select
+                                            options={[
+                                              { label: "filtered_group", value: "filtered_group" },
+                                              { label: "manual_group", value: "manual_group" },
+                                            ]}
+                                          />
                                         </Form.Item>
-                                      );
-                                    }
+                                      </Col>
+                                      <Col span={12}>
+                                        <Form.Item noStyle shouldUpdate>
+                                          {() => {
+                                            const memberType = form.getFieldValue([
+                                              "manual_groups",
+                                              field.name,
+                                              "members",
+                                              memberField.name,
+                                              "member_type",
+                                            ]) as ManualMemberType | undefined;
 
-                                    if (memberType === "manual_group") {
-                                      return (
-                                        <Form.Item
-                                          name={[memberField.name, "member_ref"]}
-                                          label="Member"
-                                          rules={[{ required: true }]}
-                                        >
-                                          <Select options={manualGroupOptions} showSearch />
+                                            if (memberType === "filtered_group") {
+                                              return (
+                                                <Form.Item
+                                                  name={[memberField.name, "member_ref"]}
+                                                  label="Member"
+                                                  rules={[{ required: true }]}
+                                                >
+                                                  <Select options={filteredGroupOptions} showSearch />
+                                                </Form.Item>
+                                              );
+                                            }
+
+                                            if (memberType === "manual_group") {
+                                              return (
+                                                <Form.Item
+                                                  name={[memberField.name, "member_ref"]}
+                                                  label="Member"
+                                                  rules={[{ required: true }]}
+                                                >
+                                                  <Select options={manualGroupOptions} showSearch />
+                                                </Form.Item>
+                                              );
+                                            }
+
+                                            return null;
+                                          }}
                                         </Form.Item>
-                                      );
-                                    }
-
-                                    return (
-                                      <Form.Item
-                                        name={[memberField.name, "member_ref"]}
-                                        label="Proxy Name"
-                                        rules={[{ required: true }]}
-                                      >
-                                        <Input placeholder="proxy name" />
-                                      </Form.Item>
-                                    );
-                                  }}
-                                </Form.Item>
-                              </Col>
-                              <Col span={4}>
-                                <Form.Item
-                                  name={[memberField.name, "position"]}
-                                  label="Pos"
-                                  rules={[{ required: true }]}
+                                      </Col>
+                                      <Col span={6}>
+                                        <Form.Item label=" ">
+                                          <Space size={4}>
+                                            <MoveControls
+                                              index={memberIndex}
+                                              total={memberFields.length}
+                                              onMove={memberOps.move}
+                                            />
+                                            <Button danger onClick={() => memberOps.remove(memberField.name)}>
+                                              Del
+                                            </Button>
+                                          </Space>
+                                        </Form.Item>
+                                      </Col>
+                                    </Row>
+                                  </Card>
+                                ))}
+                                <Button
+                                  onClick={() =>
+                                    memberOps.add({
+                                      member_type: "filtered_group",
+                                      member_ref: "",
+                                    })
+                                  }
                                 >
-                                  <InputNumber min={1} style={{ width: "100%" }} />
-                                </Form.Item>
-                              </Col>
-                              <Col span={4}>
-                                <Form.Item label=" ">
-                                  <Button danger onClick={() => memberOps.remove(memberField.name)}>
-                                    Del
-                                  </Button>
-                                </Form.Item>
-                              </Col>
-                            </Row>
-                          </Card>
-                        ))}
-                        <Button
-                          onClick={() =>
-                            memberOps.add({
-                              member_type: "filtered_group",
-                              member_ref: "",
-                              position: memberFields.length + 1,
-                            })
-                          }
-                        >
-                          Add Manual Member
-                        </Button>
-                      </Space>
-                    )}
-                  </Form.List>
-                </Card>
+                                  Add Manual Member
+                                </Button>
+                              </Space>
+                            )}
+                          </Form.List>
+                        </Space>
+                      ),
+                    },
+                  ]}
+                />
               ))}
               <Button
                 onClick={() =>
                   add({
                     name: "",
-                    position: fields.length + 1,
                     group_mode: "select",
                     test_url: "",
                     test_interval_sec: 300,
@@ -866,18 +830,18 @@ export default function MainConfigEditorDrawer({
         <Divider />
         <Typography.Title level={5}>Dialer Overrides</Typography.Title>
         <Form.List name="dialer_override_rules">
-          {(fields, { add, remove }) => (
+          {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field) => (
+              {fields.map((field, index) => (
                 <Card key={field.key} size="small">
                   <Row gutter={12}>
                     <Col span={10}>
                       <Form.Item
-                        name={[field.name, "match_regex"]}
-                        label="Match Regex"
+                        name={[field.name, "filtered_group_name"]}
+                        label="Filtered Group"
                         rules={[{ required: true }]}
                       >
-                        <Input />
+                        <Select options={filteredGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
                     <Col span={8}>
@@ -889,20 +853,14 @@ export default function MainConfigEditorDrawer({
                         <Select options={nonShuntGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
-                    <Col span={3}>
-                      <Form.Item
-                        name={[field.name, "position"]}
-                        label="Pos"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber min={1} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={3}>
+                    <Col span={4}>
                       <Form.Item label=" ">
-                        <Button danger onClick={() => remove(field.name)}>
-                          Del
-                        </Button>
+                        <Space size={4}>
+                          <MoveControls index={index} total={fields.length} onMove={move} />
+                          <Button danger onClick={() => remove(field.name)}>
+                            Del
+                          </Button>
+                        </Space>
                       </Form.Item>
                     </Col>
                   </Row>
@@ -911,9 +869,8 @@ export default function MainConfigEditorDrawer({
               <Button
                 onClick={() =>
                   add({
-                    match_regex: ".*",
+                    filtered_group_name: "",
                     dialer_group_name: "",
-                    position: fields.length + 1,
                   })
                 }
               >
@@ -926,20 +883,11 @@ export default function MainConfigEditorDrawer({
         <Divider />
         <Typography.Title level={5}>Shunt Bindings</Typography.Title>
         <Form.List name="shunt_bindings">
-          {(fields, { add, remove }) => (
+          {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field) => (
+              {fields.map((field, index) => (
                 <Card key={field.key} size="small">
                   <Row gutter={12}>
-                    <Col span={4}>
-                      <Form.Item
-                        name={[field.name, "position"]}
-                        label="Position"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber min={1} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
                     <Col span={6}>
                       <Form.Item
                         name={[field.name, "binding_name"]}
@@ -978,16 +926,22 @@ export default function MainConfigEditorDrawer({
                         <Switch />
                       </Form.Item>
                     </Col>
+                    <Col span={4}>
+                      <Form.Item label=" ">
+                        <Space size={4}>
+                          <MoveControls index={index} total={fields.length} onMove={move} />
+                          <Button danger onClick={() => remove(field.name)}>
+                            Remove
+                          </Button>
+                        </Space>
+                      </Form.Item>
+                    </Col>
                   </Row>
-                  <Button danger onClick={() => remove(field.name)}>
-                    Remove Binding
-                  </Button>
                 </Card>
               ))}
               <Button
                 onClick={() =>
                   add({
-                    position: fields.length + 1,
                     binding_name: "",
                     rule_source_id: "",
                     default_group_name: "",

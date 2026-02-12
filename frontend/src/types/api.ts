@@ -54,10 +54,6 @@ export interface MainConfig {
 }
 
 export interface BuilderState {
-  subscription_links: {
-    subscription_source_id: string;
-    position: number;
-  }[];
   filtered_groups: {
     name: string;
     position: number;
@@ -78,15 +74,14 @@ export interface BuilderState {
     test_url?: string | null;
     test_interval_sec?: number | null;
     members: {
-      member_type: "filtered_group" | "manual_group" | "proxy_name";
+      member_type: "filtered_group" | "manual_group";
       member_ref: string;
       position: number;
     }[];
   }[];
   dialer_override_rules: {
-    match_regex: string;
+    filtered_group_name: string;
     dialer_group_name: string;
-    position: number;
   }[];
   shunt_bindings: {
     position: number;

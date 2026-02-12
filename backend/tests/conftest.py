@@ -18,7 +18,6 @@ from app.models import (
     FilteredGroup,
     FilteredGroupRule,
     MainConfig,
-    MainConfigSubscriptionLink,
     ManualGroup,
     ManualGroupMember,
     RuleSource,
@@ -55,7 +54,6 @@ async def admin_headers() -> dict[str, str]:
 @pytest.fixture(autouse=True)
 async def clean_db() -> None:
     async with AsyncSessionLocal() as db:
-        await db.execute(delete(MainConfigSubscriptionLink))
         await db.execute(delete(FilteredGroupRule))
         await db.execute(delete(FilteredGroup))
         await db.execute(delete(ManualGroupMember))

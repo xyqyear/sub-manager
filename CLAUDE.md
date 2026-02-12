@@ -113,12 +113,11 @@ A main config combines subscriptions + rules into a final output. Each config ha
 
 | Table                            | Purpose                                    |
 |----------------------------------|--------------------------------------------|
-| `main_config_subscription_link`  | Links subscriptions into config            |
 | `filtered_group`                 | Named proxy group filtered by regex        |
 | `filtered_group_rule`            | Per-group regex rules against subscription sources |
 | `manual_group`                   | Named group referencing filtered/manual groups |
-| `manual_group_member`            | Members: `filtered_group`, `manual_group`, or `proxy_name` |
-| `dialer_override_rule`           | Assigns `dialer-proxy` to proxies by regex match |
+| `manual_group_member`            | Members: `filtered_group` or `manual_group` |
+| `dialer_override_rule`           | Assigns `dialer-proxy` to proxies in a filtered group |
 | `shunt_binding`                  | Binds a rule source to a shunt proxy-group |
 
 All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps. Lists are ordered by `position` field.
@@ -127,11 +126,11 @@ All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` t
 
 The generation pipeline:
 
-1. **Load subscriptions** - Gather cached proxies from all linked subscription sources. Skip disabled (with warning). Fail on missing cache (409).
+1. **Load subscriptions** - Derive subscription IDs from filtered group rules (first-seen order). Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
 2. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
 3. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
-4. **Manual groups** - Recursive resolution. Members can be filtered groups, other manual groups, or proxy names. Cycle detection at runtime.
-5. **Dialer overrides** - First-match-per-proxy. Assigns `dialer-proxy` field on the proxy object.
+4. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
+5. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
 6. **Shunt groups + rule-providers** - Each binding generates:
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
    - A `rule-providers` entry pointing to `{public_base_url}/api/public/configs/{id}/rules/{rule_id}.yaml?password=...`
@@ -184,10 +183,9 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 ```python
 # Builder payload (PUT /api/admin/main-configs/{id}/builder)
 BuilderPayload:
-  subscription_links: [{subscription_source_id, position}]
   filtered_groups: [{name, position, group_mode, test_url?, test_interval_sec?, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
   manual_groups: [{name, position, group_mode, test_url?, test_interval_sec?, members: [{member_type, member_ref, position}]}]
-  dialer_override_rules: [{match_regex, dialer_group_name, position}]
+  dialer_override_rules: [{filtered_group_name, dialer_group_name, position}]
   shunt_bindings: [{position, binding_name, rule_source_id, default_group_name, no_resolve}]
 
 # Preview response
@@ -197,7 +195,7 @@ PreviewWithDiagnosticsResponse:
 
 # Type enums
 GroupMode: "select" | "fallback" | "url-test"
-MemberType: "filtered_group" | "manual_group" | "proxy_name"
+MemberType: "filtered_group" | "manual_group"
 FinalTargetType: "DIRECT" | "REJECT" | "group"
 RuleBehavior: "classical" | "domain" | "ipcidr"
 ```

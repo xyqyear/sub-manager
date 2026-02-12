@@ -13,7 +13,6 @@ from app.models import (
     FilteredGroup,
     FilteredGroupRule,
     MainConfig,
-    MainConfigSubscriptionLink,
     ManualGroup,
     ManualGroupMember,
     RuleSource,
@@ -31,7 +30,6 @@ from app.schemas.configs import (
     FilteredGroupRulePayload,
     MainConfigCreate,
     MainConfigRead,
-    MainConfigSubscriptionLinkPayload,
     MainConfigUpdate,
     ManualGroupMemberPayload,
     ManualGroupPayload,
@@ -148,7 +146,11 @@ async def delete_main_config(db: AsyncSession, config: MainConfig) -> None:
 
 
 async def _validate_builder_refs(db: AsyncSession, payload: BuilderPayload) -> None:
-    subscription_ids = {item.subscription_source_id for item in payload.subscription_links}
+    subscription_ids = {
+        rule.subscription_source_id
+        for group in payload.filtered_groups
+        for rule in group.rules
+    }
     if subscription_ids:
         result = await db.execute(
             select(SubscriptionSource.id).where(SubscriptionSource.id.in_(subscription_ids))
@@ -209,7 +211,7 @@ def _validate_builder_shapes(payload: BuilderPayload) -> None:
                         422,
                     )
                 deps[group.name].add(member.member_ref)
-            elif member.member_type != "proxy_name":
+            else:
                 raise ServiceError(
                     f"invalid member_type {member.member_type}",
                     422,
@@ -233,13 +235,11 @@ def _validate_builder_shapes(payload: BuilderPayload) -> None:
         visit(item)
 
     for item in payload.dialer_override_rules:
-        try:
-            re.compile(item.match_regex)
-        except re.error as exc:
+        if item.filtered_group_name not in filtered_set:
             raise ServiceError(
-                f"invalid dialer regex {item.match_regex}: {exc}",
+                f"dialer references unknown filtered group: {item.filtered_group_name}",
                 422,
-            ) from exc
+            )
         if item.dialer_group_name not in group_name_set:
             raise ServiceError(
                 f"dialer group not found: {item.dialer_group_name}",
@@ -255,19 +255,6 @@ def _validate_builder_shapes(payload: BuilderPayload) -> None:
 
 
 async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
-    links_result = await db.execute(
-        select(MainConfigSubscriptionLink).where(
-            MainConfigSubscriptionLink.main_config_id == config_id
-        ).order_by(MainConfigSubscriptionLink.position.asc())
-    )
-    links = [
-        MainConfigSubscriptionLinkPayload(
-            subscription_source_id=item.subscription_source_id,
-            position=item.position,
-        )
-        for item in links_result.scalars().all()
-    ]
-
     fg_result = await db.execute(
         select(FilteredGroup).where(FilteredGroup.main_config_id == config_id).order_by(FilteredGroup.position.asc())
     )
@@ -338,9 +325,8 @@ async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
     )
     dialer_override_rules = [
         DialerOverridePayload(
-            match_regex=item.match_regex,
+            filtered_group_name=item.filtered_group_name,
             dialer_group_name=item.dialer_group_name,
-            position=item.position,
         )
         for item in dor_result.scalars().all()
     ]
@@ -360,7 +346,6 @@ async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
     ]
 
     return BuilderRead(
-        subscription_links=links,
         filtered_groups=filtered_groups,
         manual_groups=manual_groups,
         dialer_override_rules=dialer_override_rules,
@@ -371,12 +356,6 @@ async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
 async def replace_builder(db: AsyncSession, config_id: str, payload: BuilderPayload) -> BuilderRead:
     await _validate_builder_refs(db, payload)
     _validate_builder_shapes(payload)
-
-    await db.execute(
-        delete(MainConfigSubscriptionLink).where(
-            MainConfigSubscriptionLink.main_config_id == config_id
-        )
-    )
 
     fg_result = await db.execute(
         select(FilteredGroup).where(FilteredGroup.main_config_id == config_id)
@@ -398,15 +377,6 @@ async def replace_builder(db: AsyncSession, config_id: str, payload: BuilderPayl
         delete(DialerOverrideRule).where(DialerOverrideRule.main_config_id == config_id)
     )
     await db.execute(delete(ShuntBinding).where(ShuntBinding.main_config_id == config_id))
-
-    for link in payload.subscription_links:
-        db.add(
-            MainConfigSubscriptionLink(
-                main_config_id=config_id,
-                subscription_source_id=link.subscription_source_id,
-                position=link.position,
-            )
-        )
 
     fg_name_to_id: dict[str, str] = {}
     for group in payload.filtered_groups:
@@ -457,13 +427,13 @@ async def replace_builder(db: AsyncSession, config_id: str, payload: BuilderPayl
                 )
             )
 
-    for rule in payload.dialer_override_rules:
+    for index, rule in enumerate(payload.dialer_override_rules, start=1):
         db.add(
             DialerOverrideRule(
                 main_config_id=config_id,
-                match_regex=rule.match_regex,
+                filtered_group_name=rule.filtered_group_name,
                 dialer_group_name=rule.dialer_group_name,
-                position=rule.position,
+                position=index,
             )
         )
 
@@ -487,15 +457,13 @@ async def preview_filtered_group_matches(
     db: AsyncSession,
     payload: FilteredGroupPreviewRequest,
 ) -> FilteredGroupPreviewResponse:
-    ordered_links = sorted(
-        list(enumerate(payload.subscription_links)),
-        key=lambda item: _normalize_position(item[1].position, item[0] + 1),
-    )
-    subscription_ids = {
-        item.subscription_source_id
-        for _, item in ordered_links
-        if item.subscription_source_id
-    }
+    subscription_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for group in payload.filtered_groups:
+        for rule in group.rules:
+            if rule.subscription_source_id and rule.subscription_source_id not in seen_ids:
+                subscription_ids.append(rule.subscription_source_id)
+                seen_ids.add(rule.subscription_source_id)
 
     subscription_map: dict[str, SubscriptionSource] = {}
     if subscription_ids:
@@ -508,15 +476,10 @@ async def preview_filtered_group_matches(
         }
 
     ordered_sources: list[tuple[str, str, list[dict]]] = []
-    for _, link in ordered_links:
-        source_id = link.subscription_source_id
-        if not source_id:
-            continue
-
+    for source_id in subscription_ids:
         source = subscription_map.get(source_id)
         if source is None or not source.enabled or not source.cached_proxies_json:
             continue
-
         ordered_sources.append((source.id, source.name, source.cached_proxies_json))
 
     _, proxies_by_source, _ = build_proxy_pool_with_collision_names(ordered_sources)

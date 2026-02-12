@@ -15,7 +15,6 @@ from app.models import (
     FilteredGroup,
     FilteredGroupRule,
     MainConfig,
-    MainConfigSubscriptionLink,
     ManualGroup,
     ManualGroupMember,
     RuleSource,
@@ -130,22 +129,6 @@ def match_filtered_rules_on_proxies(
 
 
 async def _load_builder_state(db: AsyncSession, config_id: str) -> dict:
-    links_result = await db.execute(
-        select(MainConfigSubscriptionLink)
-        .where(MainConfigSubscriptionLink.main_config_id == config_id)
-        .order_by(MainConfigSubscriptionLink.position.asc())
-    )
-    links = list(links_result.scalars().all())
-
-    sub_ids = [item.subscription_source_id for item in links]
-    subscriptions: list[SubscriptionSource] = []
-    if sub_ids:
-        sub_result = await db.execute(
-            select(SubscriptionSource).where(SubscriptionSource.id.in_(sub_ids))
-        )
-        subscriptions = list(sub_result.scalars().all())
-    sub_map = {item.id: item for item in subscriptions}
-
     fg_result = await db.execute(
         select(FilteredGroup)
         .where(FilteredGroup.main_config_id == config_id)
@@ -162,6 +145,22 @@ async def _load_builder_state(db: AsyncSession, config_id: str) -> dict:
             .order_by(FilteredGroupRule.position.asc())
         )
         fg_rules = list(fg_rule_result.scalars().all())
+
+    sub_ids_ordered: list[str] = []
+    seen_sub_ids: set[str] = set()
+    fg_id_order = {fg.id: idx for idx, fg in enumerate(filtered_groups)}
+    for rule in sorted(fg_rules, key=lambda r: (fg_id_order.get(r.filtered_group_id, 0), r.position)):
+        if rule.subscription_source_id not in seen_sub_ids:
+            sub_ids_ordered.append(rule.subscription_source_id)
+            seen_sub_ids.add(rule.subscription_source_id)
+
+    subscriptions: list[SubscriptionSource] = []
+    if sub_ids_ordered:
+        sub_result = await db.execute(
+            select(SubscriptionSource).where(SubscriptionSource.id.in_(sub_ids_ordered))
+        )
+        subscriptions = list(sub_result.scalars().all())
+    sub_map = {item.id: item for item in subscriptions}
 
     mg_result = await db.execute(
         select(ManualGroup)
@@ -202,7 +201,7 @@ async def _load_builder_state(db: AsyncSession, config_id: str) -> dict:
     rule_map = {item.id: item for item in rules}
 
     return {
-        "links": links,
+        "sub_ids_ordered": sub_ids_ordered,
         "sub_map": sub_map,
         "filtered_groups": filtered_groups,
         "filtered_rules": fg_rules,
@@ -228,15 +227,15 @@ async def generate_config_yaml(
         warnings=[],
     )
 
-    links = state["links"]
+    sub_ids_ordered: list[str] = state["sub_ids_ordered"]
     sub_map: dict[str, SubscriptionSource] = state["sub_map"]
 
     ordered_sources: list[tuple[str, str, list[dict]]] = []
 
-    for link in links:
-        source = sub_map.get(link.subscription_source_id)
+    for source_id in sub_ids_ordered:
+        source = sub_map.get(source_id)
         if source is None:
-            diagnostics.warnings.append(f"subscription not found: {link.subscription_source_id}")
+            diagnostics.warnings.append(f"subscription not found: {source_id}")
             continue
         if not source.enabled:
             diagnostics.warnings.append(f"subscription disabled: {source.name}")
@@ -256,7 +255,7 @@ async def generate_config_yaml(
             (source.id, source.name, source.cached_proxies_json),
         )
 
-    proxy_pool, proxies_by_source, raw_to_final = build_proxy_pool_with_collision_names(
+    proxy_pool, proxies_by_source, _ = build_proxy_pool_with_collision_names(
         ordered_sources
     )
 
@@ -306,8 +305,6 @@ async def generate_config_yaml(
     manual_resolved: dict[str, list[str]] = {}
     resolving: set[str] = set()
 
-    final_name_set = {str(proxy.get("name", "")) for proxy in proxy_pool}
-
     def resolve_manual_group(name: str) -> list[str]:
         if name in manual_resolved:
             return manual_resolved[name]
@@ -331,17 +328,6 @@ async def generate_config_yaml(
             elif member.member_type == "manual_group":
                 _ = resolve_manual_group(member.member_ref)
                 members.append(member.member_ref)
-            elif member.member_type == "proxy_name":
-                if member.member_ref in final_name_set:
-                    members.append(member.member_ref)
-                else:
-                    matched = raw_to_final.get(member.member_ref, [])
-                    if not matched:
-                        raise GenerationError(
-                            f"manual group {name} references unknown proxy {member.member_ref}",
-                            422,
-                        )
-                    members.extend(matched)
             else:
                 raise GenerationError(
                     f"invalid manual group member type: {member.member_type}",
@@ -373,6 +359,7 @@ async def generate_config_yaml(
     group_names_manual = [row.name for row in manual_groups]
     available_non_shunt_groups = set(group_names_filtered + group_names_manual)
 
+    proxy_by_name = {str(p.get("name", "")): p for p in proxy_pool}
     matched_dialer_proxy_names: set[str] = set()
     for rule in state["dialer_rules"]:
         if rule.dialer_group_name not in available_non_shunt_groups:
@@ -380,14 +367,17 @@ async def generate_config_yaml(
                 f"dialer group not found: {rule.dialer_group_name}",
                 422,
             )
-        pattern = re.compile(rule.match_regex)
-        for proxy in proxy_pool:
-            proxy_name = str(proxy.get("name", ""))
-            if proxy_name in matched_dialer_proxy_names:
-                continue
-            if pattern.search(proxy_name):
-                proxy["dialer-proxy"] = rule.dialer_group_name
-                matched_dialer_proxy_names.add(proxy_name)
+        if rule.filtered_group_name not in filtered_group_members:
+            raise GenerationError(
+                f"dialer references unknown filtered group: {rule.filtered_group_name}",
+                422,
+            )
+        for proxy_name in filtered_group_members[rule.filtered_group_name]:
+            if proxy_name not in matched_dialer_proxy_names:
+                proxy = proxy_by_name.get(proxy_name)
+                if proxy is not None:
+                    proxy["dialer-proxy"] = rule.dialer_group_name
+                    matched_dialer_proxy_names.add(proxy_name)
 
     shunt_bindings = state["shunt_bindings"]
     rule_map: dict[str, RuleSource] = state["rule_map"]

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 FinalTargetType = Literal["DIRECT", "REJECT", "group"]
 GroupMode = Literal["select", "fallback", "url-test"]
-MemberType = Literal["filtered_group", "manual_group", "proxy_name"]
+MemberType = Literal["filtered_group", "manual_group"]
 
 
 class MainConfigCreate(BaseModel):
@@ -43,11 +43,6 @@ class MainConfigRead(BaseModel):
     updated_at: datetime
 
 
-class MainConfigSubscriptionLinkPayload(BaseModel):
-    subscription_source_id: str
-    position: int
-
-
 class FilteredGroupRulePayload(BaseModel):
     subscription_source_id: str
     regex_pattern: str
@@ -80,9 +75,8 @@ class ManualGroupPayload(BaseModel):
 
 
 class DialerOverridePayload(BaseModel):
-    match_regex: str
+    filtered_group_name: str
     dialer_group_name: str
-    position: int
 
 
 class ShuntBindingPayload(BaseModel):
@@ -94,7 +88,6 @@ class ShuntBindingPayload(BaseModel):
 
 
 class BuilderPayload(BaseModel):
-    subscription_links: list[MainConfigSubscriptionLinkPayload]
     filtered_groups: list[FilteredGroupPayload]
     manual_groups: list[ManualGroupPayload]
     dialer_override_rules: list[DialerOverridePayload]
@@ -102,16 +95,10 @@ class BuilderPayload(BaseModel):
 
 
 class BuilderRead(BaseModel):
-    subscription_links: list[MainConfigSubscriptionLinkPayload]
     filtered_groups: list[FilteredGroupPayload]
     manual_groups: list[ManualGroupPayload]
     dialer_override_rules: list[DialerOverridePayload]
     shunt_bindings: list[ShuntBindingPayload]
-
-
-class FilteredGroupPreviewSubscriptionLinkPayload(BaseModel):
-    subscription_source_id: str | None = None
-    position: int | None = None
 
 
 class FilteredGroupPreviewRulePayload(BaseModel):
@@ -127,7 +114,6 @@ class FilteredGroupPreviewGroupPayload(BaseModel):
 
 
 class FilteredGroupPreviewRequest(BaseModel):
-    subscription_links: list[FilteredGroupPreviewSubscriptionLinkPayload] = []
     filtered_groups: list[FilteredGroupPreviewGroupPayload] = []
 
 

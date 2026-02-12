@@ -116,30 +116,6 @@ class MainConfig(Base, TimestampMixin):
     final_target_group_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
-class MainConfigSubscriptionLink(Base, TimestampMixin):
-    __tablename__ = "main_config_subscription_link"
-    __table_args__ = (
-        UniqueConstraint("main_config_id", "subscription_source_id", name="uq_cfg_sub_link"),
-    )
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
-    )
-    main_config_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("main_config.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    subscription_source_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("subscription_source.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
 class FilteredGroup(Base, TimestampMixin):
     __tablename__ = "filtered_group"
     __table_args__ = (
@@ -227,7 +203,7 @@ class ManualGroupMember(Base, TimestampMixin):
     member_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-    )  # filtered_group|manual_group|proxy_name
+    )  # filtered_group|manual_group
     member_ref: Mapped[str] = mapped_column(Text, nullable=False)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -245,7 +221,7 @@ class DialerOverrideRule(Base, TimestampMixin):
         ForeignKey("main_config.id", ondelete="CASCADE"),
         nullable=False,
     )
-    match_regex: Mapped[str] = mapped_column(Text, nullable=False)
+    filtered_group_name: Mapped[str] = mapped_column(String(128), nullable=False)
     dialer_group_name: Mapped[str] = mapped_column(String(128), nullable=False)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 

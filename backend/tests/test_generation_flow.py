@@ -37,10 +37,6 @@ async def test_filtered_group_preview_endpoint_uses_backend_logic(client, admin_
         "/api/admin/main-configs/filtered-groups/preview",
         headers=admin_headers,
         json={
-            "subscription_links": [
-                {"subscription_source_id": sub1_id, "position": 1},
-                {"subscription_source_id": sub2_id, "position": 2},
-            ],
             "filtered_groups": [
                 {
                     "name": "HK",
@@ -113,9 +109,6 @@ async def test_generation_flow_manual_sources(client, admin_headers):
     config_id = config_response.json()["id"]
 
     builder_payload = {
-        "subscription_links": [
-            {"subscription_source_id": subscription_id, "position": 1}
-        ],
         "filtered_groups": [
             {
                 "name": "FG-A",
