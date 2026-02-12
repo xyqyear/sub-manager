@@ -392,7 +392,7 @@ async def generate_config_yaml(
     filtered_ordered_names = [row.name for row in filtered_groups]
 
     for idx, binding in enumerate(shunt_bindings, start=1):
-        if binding.default_group_name not in available_non_shunt_groups:
+        if binding.default_group_name not in available_non_shunt_groups | {"DIRECT", "REJECT"}:
             raise GenerationError(
                 f"shunt default group not found: {binding.default_group_name}",
                 422,
@@ -420,9 +420,10 @@ async def generate_config_yaml(
             await enqueue_rule_refresh(rule_source.id)
 
         shunt_group_members = _dedupe_keep_order(
-            [binding.default_group_name, "DIRECT", "REJECT"]
+            [binding.default_group_name, "DIRECT"]
             + manual_ordered_names
             + filtered_ordered_names
+            + ["REJECT"]
         )
         generated_shunt_groups.append(
             {

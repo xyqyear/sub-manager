@@ -193,6 +193,15 @@ export default function MainConfigEditorDrawer({
     [filteredGroupsWatch, manualGroupsWatch],
   );
 
+  const shuntDefaultGroupOptions = useMemo(
+    () => [
+      { label: "DIRECT", value: "DIRECT" },
+      { label: "REJECT", value: "REJECT" },
+      ...nonShuntGroupOptions,
+    ],
+    [nonShuntGroupOptions],
+  );
+
   const filteredGroupOptions = useMemo(
     () =>
       (filteredGroupsWatch ?? [])
@@ -918,7 +927,7 @@ export default function MainConfigEditorDrawer({
                         label="Default Group"
                         rules={[{ required: true }]}
                       >
-                        <Select options={nonShuntGroupOptions} showSearch />
+                        <Select options={shuntDefaultGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
                     <Col span={3}>

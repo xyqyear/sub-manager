@@ -247,7 +247,7 @@ def _validate_builder_shapes(payload: BuilderPayload) -> None:
             )
 
     for binding in payload.shunt_bindings:
-        if binding.default_group_name not in group_name_set:
+        if binding.default_group_name not in group_name_set | {"DIRECT", "REJECT"}:
             raise ServiceError(
                 f"shunt default group not found: {binding.default_group_name}",
                 422,
