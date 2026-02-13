@@ -13,7 +13,6 @@ class SubscriptionCreate(BaseModel):
 
     remote_url: str | None = None
     remote_auth_header: str | None = None
-    use_proxy: bool = False
     auto_update: bool = False
     update_interval_sec: int = 3600
 
@@ -26,7 +25,6 @@ class SubscriptionUpdate(BaseModel):
 
     remote_url: str | None = None
     remote_auth_header: str | None = None
-    use_proxy: bool | None = None
     auto_update: bool | None = None
     update_interval_sec: int | None = None
 
@@ -43,7 +41,6 @@ class SubscriptionRead(BaseModel):
 
     remote_url: str | None
     remote_auth_header: str | None
-    use_proxy: bool
 
     auto_update: bool
     update_interval_sec: int

@@ -23,7 +23,6 @@ type SubscriptionFormValues = {
   enabled: boolean;
   remote_url?: string;
   remote_auth_header?: string;
-  use_proxy?: boolean;
   auto_update?: boolean;
   update_interval_sec?: number;
   proxy_yaml_object_text?: string;
@@ -35,7 +34,6 @@ const defaultFormValues: SubscriptionFormValues = {
   enabled: true,
   remote_url: "",
   remote_auth_header: "",
-  use_proxy: false,
   auto_update: false,
   update_interval_sec: 3600,
   proxy_yaml_object_text: "name: node-1\ntype: socks5\nserver: 1.1.1.1\nport: 1080\n",
@@ -80,7 +78,6 @@ export default function SubscriptionsPage() {
       enabled: item.enabled,
       remote_url: item.remote_url ?? "",
       remote_auth_header: item.remote_auth_header ?? "",
-      use_proxy: item.use_proxy,
       auto_update: item.auto_update,
       update_interval_sec: item.update_interval_sec,
       proxy_yaml_object_text: "",
@@ -240,9 +237,6 @@ export default function SubscriptionsPage() {
               </Form.Item>
               <Form.Item name="remote_auth_header" label="Authorization Header">
                 <Input placeholder="token xxxxxx" />
-              </Form.Item>
-              <Form.Item name="use_proxy" label="Use Proxy" valuePropName="checked">
-                <Switch />
               </Form.Item>
               <Form.Item name="auto_update" label="Auto Update" valuePropName="checked">
                 <Switch />

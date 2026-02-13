@@ -78,7 +78,6 @@ class SubscriptionSource(Base, TimestampMixin):
     mode: Mapped[str] = mapped_column(String(16), nullable=False)  # remote|manual
     remote_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     remote_auth_header: Mapped[str | None] = mapped_column(Text, nullable=True)
-    use_proxy: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     auto_update: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     update_interval_sec: Mapped[int] = mapped_column(Integer, default=3600, nullable=False)

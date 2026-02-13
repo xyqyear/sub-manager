@@ -9,7 +9,6 @@ export interface SubscriptionSource {
   enabled: boolean;
   remote_url: string | null;
   remote_auth_header: string | null;
-  use_proxy: boolean;
   auto_update: boolean;
   update_interval_sec: number;
   next_refresh_at: string | null;

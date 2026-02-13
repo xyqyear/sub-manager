@@ -2,6 +2,10 @@
 
 Clash Meta proxy subscription / routing rule management and config generation tool.
 
+## Working with This Document
+
+This file is a reference for the project's architecture, domain model, API surface, and known gaps. When exiting plan mode, update this document to reflect any structural changes introduced by the plan — add new fields, routes, or components; remove deleted ones; adjust descriptions as needed. Do not write changelogs or "updated X" notes; keep the document self-consistent as if it were written from scratch for the current state of the codebase.
+
 ## Quick Start
 
 ```bash
@@ -16,6 +20,86 @@ cd backend && uv run pytest
 ```
 
 Set `ADMIN_TOKEN` in `backend/.env` (defaults to `change-me`). Use same token to log in on the frontend.
+
+## Product Overview
+
+### Problem
+
+Clash Meta users who subscribe to multiple proxy providers need to:
+- Combine proxy nodes from different providers into one config
+- Apply traffic routing rules (e.g., Google traffic through HK nodes, domestic traffic direct)
+- Keep subscriptions and rules auto-updated
+- Produce a single YAML config URL that Clash Meta can consume
+
+Sub Manager solves this with a web UI where users manage their sources and visually compose configs.
+
+### Core Workflow
+
+Three stages, each corresponding to a resource type:
+
+**Stage 1 — Subscription Sources: where proxy nodes come from**
+
+Users add their proxy providers. A provider can be:
+- A remote URL (e.g., from a VPN service) — the system fetches and caches the proxy node list, tracks traffic usage/expiry, and auto-refreshes on a schedule
+- A manually entered single proxy node (YAML)
+
+Each source provides a list of proxy nodes (e.g., "Hong Kong 1", "US IEPL 2", etc.).
+
+**Stage 2 — Rule Sources: traffic routing rules**
+
+Users add rule sets that define which domains/IPs should be matched. A rule source can be:
+- A remote URL (e.g., a community-maintained list of ad domains or China IP ranges)
+- Manually entered rules
+
+Each rule source has a behavior type: `classical` (full rule syntax), `domain` (domain lists), or `ipcidr` (IP ranges). The system caches rule payloads locally and serves them from its own URL in the generated config.
+
+**Stage 3 — Main Configs: the composition layer**
+
+This is where everything comes together. A main config has:
+- A base YAML (ports, DNS, TUN settings, etc. — everything except proxies, groups, and rules)
+- A **builder** that visually composes proxy groups and routing rules (see below)
+- A password for public access
+
+### The Builder
+
+The builder is the core of the product. It has four sections that work together to produce the `proxies`, `proxy-groups`, `rule-providers`, and `rules` sections of the final Clash Meta config.
+
+**Filtered Groups** — "Give me specific nodes from a subscription"
+
+Each filtered group defines regex rules against one or more subscription sources. Example:
+- Name: "HK", regex `香港|HK|Hong Kong` against subscription "Provider A" → produces a proxy group containing only matching HK nodes
+- Mode: `select` (manual pick), `url-test` (auto-select fastest), or `fallback` (auto-failover)
+
+Only nodes matched by at least one filtered group appear in the final config. Unmatched nodes are excluded entirely.
+
+**Manual Groups** — "Combine groups for advanced routing"
+
+Manual groups reference filtered groups or other manual groups as members. Use cases:
+- A "Node Select" group containing "HK", "JP", "US" filtered groups plus an "Auto Select" url-test group
+- A load-balancing or failover group across multiple regions
+
+**Dialer Overrides** — "Route traffic through a proxy chain"
+
+Assigns a `dialer-proxy` to all nodes in a filtered group, creating a relay chain. Example:
+- All nodes in "My VPS" group get `dialer-proxy: "US Transit"` → traffic goes: client → US Transit node → VPS node → destination
+- This hides the final destination from the transit provider and hides the transit from the destination
+
+**Shunt Bindings** — "Which rule goes to which group"
+
+Each binding pairs a rule source with a proxy group name and a default target. Example:
+- Rule "Google" → group "Google", default to "Node Select"
+- Rule "Ad Block" → group "Ads", default to REJECT
+- Rule "China" → group "Domestic", default to DIRECT
+
+The order of shunt bindings determines rule matching priority in the generated config. A final implicit MATCH rule catches all remaining traffic, directed to DIRECT, REJECT, or a chosen group.
+
+Each shunt binding generates a `select`-type proxy group whose members are: `[default_group, DIRECT, REJECT] + all manual groups + all filtered groups`, allowing the user to override the default at runtime in Clash Meta.
+
+### Output
+
+The system generates a complete Clash Meta YAML config accessible via a password-protected public URL. Clash Meta clients subscribe to this URL. When subscriptions or rules refresh, the generated config automatically reflects the latest data.
+
+Rule payloads referenced in the config's `rule-providers` section point back to this server's own URLs (not the original remote URLs), so the system acts as a caching proxy for rules.
 
 ## Tech Stack
 
@@ -87,23 +171,23 @@ references/                        # NOT runtime code, for context only
 
 ## Domain Model
 
-The system manages three resource types that compose into a final Clash Meta YAML config.
+The three resource types described in the Product Overview map to the following database tables and fields.
 
 ### Subscription Sources (`subscription_source`)
 
-Proxy node providers. Two modes:
+Corresponds to Stage 1 (proxy node providers). Two modes:
 - **remote**: Fetched from URL with `User-Agent: mihomo/1.18.3`, optional `Authorization` header. Caches `proxies` list from YAML. Parses `subscription-userinfo` header for traffic data.
 - **manual**: User provides a single YAML proxy object directly.
 
-Fields: `id`, `name` (unique), `mode`, `enabled`, `remote_url`, `remote_auth_header`, `use_proxy`, `auto_update`, `update_interval_sec`, `next_refresh_at`, `last_status` (never/ok/error), `cached_proxies_json`.
+Fields: `id`, `name` (unique), `mode`, `enabled`, `remote_url`, `remote_auth_header`, `auto_update`, `update_interval_sec`, `next_refresh_at`, `last_status` (never/ok/error), `cached_proxies_json`.
 
 ### Rule Sources (`rule_source`)
 
-Traffic routing rule providers. Two modes (remote/manual). Each has a `behavior`: `classical`, `domain`, or `ipcidr`. Cached as `payload_lines` (list of strings). Only YAML format supported.
+Corresponds to Stage 2 (traffic routing rules). Two modes (remote/manual). Each has a `behavior`: `classical`, `domain`, or `ipcidr`. Cached as `payload_lines` (list of strings). Only YAML format supported.
 
 ### Main Configs (`main_config`) + Builder Graph
 
-A main config combines subscriptions + rules into a final output. Each config has:
+Corresponds to Stage 3 (the composition layer). A main config combines subscriptions + rules into a final output. Each config has:
 - `base_config_yaml`: base Clash settings (ports, DNS, TUN, etc.)
 - `password_plain`: per-config access password for public endpoints
 - `final_target_type`: DIRECT / REJECT / group (for the trailing MATCH rule)
@@ -244,7 +328,6 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 
 ## Known Gaps / Technical Notes
 
-- `use_proxy` field on subscriptions is stored but not applied in the HTTP fetch path.
 - `repositories/` layer exists but is unused; services query SQLAlchemy directly.
 - `Dashboard.tsx` and `About.tsx` are legacy pages not reachable from current router.
 - Several frontend deps are unused by active pages (`@rjsf/*`, xterm, zustand).

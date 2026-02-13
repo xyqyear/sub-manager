@@ -83,7 +83,6 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
         enabled=payload.enabled,
         remote_url=payload.remote_url,
         remote_auth_header=payload.remote_auth_header,
-        use_proxy=payload.use_proxy,
         auto_update=payload.auto_update,
         update_interval_sec=update_interval_sec,
         last_status="never",
@@ -128,8 +127,6 @@ async def update_subscription(
             source.remote_url = payload.remote_url
         if payload.remote_auth_header is not None:
             source.remote_auth_header = payload.remote_auth_header
-        if payload.use_proxy is not None:
-            source.use_proxy = payload.use_proxy
         if payload.auto_update is not None:
             source.auto_update = payload.auto_update
         if payload.update_interval_sec is not None:
