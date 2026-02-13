@@ -10,9 +10,11 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import type { RuleSource } from "@/types/api";
 import api from "@/utils/api";
@@ -185,16 +187,16 @@ export default function RulesPage() {
       key: "actions",
       render: (_: unknown, row: RuleSource) => (
         <Space>
-          <Button size="small" onClick={() => openEdit(row)}>
-            Edit
-          </Button>
-          <Button size="small" onClick={() => void handleRefresh(row)}>
-            Refresh
-          </Button>
+          <Tooltip title="Edit">
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
+          </Tooltip>
+          <Tooltip title="Refresh">
+            <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(row)} />
+          </Tooltip>
           <Popconfirm title="Delete rule?" onConfirm={() => void handleDelete(row)}>
-            <Button size="small" danger>
-              Delete
-            </Button>
+            <Tooltip title="Delete">
+              <Button size="small" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -204,10 +206,12 @@ export default function RulesPage() {
   return (
     <Space direction="vertical" style={{ display: "flex" }} size={16}>
       <Space>
-        <Button type="primary" onClick={openCreate}>
-          New Rule
-        </Button>
-        <Button onClick={() => void fetchItems()}>Reload</Button>
+        <Tooltip title="New Rule">
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} />
+        </Tooltip>
+        <Tooltip title="Reload">
+          <Button icon={<ReloadOutlined />} onClick={() => void fetchItems()} />
+        </Tooltip>
       </Space>
 
       <Table<RuleSource>

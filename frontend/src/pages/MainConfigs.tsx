@@ -6,9 +6,11 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
+import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import MainConfigEditorDrawer from "@/pages/main-configs/MainConfigEditorDrawer";
 import type {
@@ -130,19 +132,19 @@ export default function MainConfigsPage() {
       key: "actions",
       render: (_: unknown, row: MainConfig) => (
         <Space>
-          <Button size="small" onClick={() => openEdit(row)}>
-            Edit
-          </Button>
-          <Button size="small" onClick={() => void handlePreview(row)}>
-            Preview
-          </Button>
-          <Button size="small" onClick={() => void handleCopyArtifactLink(row)}>
-            Copy URL
-          </Button>
+          <Tooltip title="Edit">
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
+          </Tooltip>
+          <Tooltip title="Preview">
+            <Button size="small" icon={<EyeOutlined />} onClick={() => void handlePreview(row)} />
+          </Tooltip>
+          <Tooltip title="Copy URL">
+            <Button size="small" icon={<CopyOutlined />} onClick={() => void handleCopyArtifactLink(row)} />
+          </Tooltip>
           <Popconfirm title="Delete this main config?" onConfirm={() => void handleDelete(row)}>
-            <Button size="small" danger>
-              Delete
-            </Button>
+            <Tooltip title="Delete">
+              <Button size="small" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -152,10 +154,12 @@ export default function MainConfigsPage() {
   return (
     <Space direction="vertical" style={{ display: "flex" }} size={16}>
       <Space>
-        <Button type="primary" onClick={openCreate}>
-          New Main Config
-        </Button>
-        <Button onClick={() => void fetchAll()}>Reload</Button>
+        <Tooltip title="New Main Config">
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} />
+        </Tooltip>
+        <Tooltip title="Reload">
+          <Button icon={<ReloadOutlined />} onClick={() => void fetchAll()} />
+        </Tooltip>
       </Space>
 
       <Table<MainConfig>

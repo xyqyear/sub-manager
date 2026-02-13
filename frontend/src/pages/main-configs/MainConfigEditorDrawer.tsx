@@ -16,10 +16,11 @@ import {
   Space,
   Switch,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
-import { DownOutlined, UpOutlined } from "@ant-design/icons";
+import { CloseOutlined, DeleteOutlined, DownOutlined, EyeOutlined, PlusOutlined, SaveOutlined, UpOutlined } from "@ant-design/icons";
 import { type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   FilteredGroupPreviewResponse,
@@ -105,25 +106,29 @@ function MoveControls({ index, total, onMove }: MoveControlsProps) {
 
   return (
     <Space.Compact>
-      <Button
-        type="text"
-        size="small"
-        icon={<UpOutlined />}
-        disabled={index === 0}
-        onClick={handleMove(-1)}
-      />
-      <Button
-        type="text"
-        size="small"
-        icon={<DownOutlined />}
-        disabled={index >= total - 1}
-        onClick={handleMove(1)}
-      />
+      <Tooltip title="Move Up">
+        <Button
+          type="text"
+          size="small"
+          icon={<UpOutlined />}
+          disabled={index === 0}
+          onClick={handleMove(-1)}
+        />
+      </Tooltip>
+      <Tooltip title="Move Down">
+        <Button
+          type="text"
+          size="small"
+          icon={<DownOutlined />}
+          disabled={index >= total - 1}
+          onClick={handleMove(1)}
+        />
+      </Tooltip>
     </Space.Compact>
   );
 }
 
-function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "shunt_bindings"> {
+function normalizeGroupFields(values: EditorFormValues, rules: RuleSource[]): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "shunt_bindings"> {
   return {
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
@@ -156,7 +161,7 @@ function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filte
     })),
     shunt_bindings: (values.shunt_bindings ?? []).map((item, index) => ({
       position: index + 1,
-      binding_name: item.binding_name,
+      binding_name: item.binding_name?.trim() || (rules.find(r => r.id === item.rule_source_id)?.name ?? ""),
       rule_source_id: item.rule_source_id,
       default_group_name: item.default_group_name,
       no_resolve: Boolean(item.no_resolve),
@@ -319,7 +324,7 @@ export default function MainConfigEditorDrawer({
     try {
       const values = form.getFieldsValue(true) as EditorFormValues;
       setPreviewing(true);
-      const groupFields = normalizeGroupFields(values);
+      const groupFields = normalizeGroupFields(values, rules);
       const payload = {
         base_config_yaml: values.base_config_yaml,
         password_plain: values.password_plain,
@@ -350,7 +355,7 @@ export default function MainConfigEditorDrawer({
       const values = await form.validateFields();
       setSaving(true);
 
-      const groupFields = normalizeGroupFields(values);
+      const groupFields = normalizeGroupFields(values, rules);
       const payload = {
         name: values.name,
         password_plain: values.password_plain,
@@ -389,13 +394,15 @@ export default function MainConfigEditorDrawer({
       destroyOnHidden
       extra={
         <Space>
-          <Button onClick={() => void handlePreview()} loading={previewing}>
-            Preview
-          </Button>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="primary" loading={saving} onClick={() => void submit()}>
-            Save
-          </Button>
+          <Tooltip title="Preview">
+            <Button icon={<EyeOutlined />} onClick={() => void handlePreview()} loading={previewing} />
+          </Tooltip>
+          <Tooltip title="Cancel">
+            <Button icon={<CloseOutlined />} onClick={onClose} />
+          </Tooltip>
+          <Tooltip title="Save">
+            <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void submit()} />
+          </Tooltip>
         </Space>
       }
     >
@@ -494,13 +501,14 @@ export default function MainConfigEditorDrawer({
                               queueFilteredGroupPreview();
                             }}
                           >
-                            <Button
-                              danger
-                              size="small"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              Remove
-                            </Button>
+                            <Tooltip title="Remove">
+                              <Button
+                                danger
+                                size="small"
+                                icon={<DeleteOutlined />}
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                            </Tooltip>
                           </Popconfirm>
                         </Space>
                       ),
@@ -585,33 +593,35 @@ export default function MainConfigEditorDrawer({
                                                 queueFilteredGroupPreview();
                                               }}
                                             />
-                                            <Button
-                                              danger
-                                              onClick={() => {
-                                                ruleOps.remove(ruleField.name);
-                                                queueFilteredGroupPreview();
-                                              }}
-                                            >
-                                              Del
-                                            </Button>
+                                            <Tooltip title="Delete">
+                                              <Button
+                                                danger
+                                                icon={<DeleteOutlined />}
+                                                onClick={() => {
+                                                  ruleOps.remove(ruleField.name);
+                                                  queueFilteredGroupPreview();
+                                                }}
+                                              />
+                                            </Tooltip>
                                           </Space>
                                         </Form.Item>
                                       </Col>
                                     </Row>
                                   </Card>
                                 ))}
-                                <Button
-                                  onClick={() => {
-                                    ruleOps.add({
-                                      subscription_source_id: "",
-                                      regex_pattern: ".*",
-                                      regex_flags: "",
-                                    });
-                                    queueFilteredGroupPreview();
-                                  }}
-                                >
-                                  Add Filter Rule
-                                </Button>
+                                <Tooltip title="Add Filter Rule">
+                                  <Button
+                                    icon={<PlusOutlined />}
+                                    onClick={() => {
+                                      ruleOps.add({
+                                        subscription_source_id: "",
+                                        regex_pattern: ".*",
+                                        regex_flags: "",
+                                      });
+                                      queueFilteredGroupPreview();
+                                    }}
+                                  />
+                                </Tooltip>
                               </Space>
                             )}
                           </Form.List>
@@ -645,20 +655,21 @@ export default function MainConfigEditorDrawer({
                   ]}
                 />
               ))}
-              <Button
-                onClick={() => {
-                  add({
-                    name: "",
-                    group_mode: "select",
-                    test_url: "",
-                    test_interval_sec: 300,
-                    rules: [],
-                  });
-                  queueFilteredGroupPreview();
-                }}
-              >
-                Add Filtered Group
-              </Button>
+              <Tooltip title="Add Filtered Group">
+                <Button
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    add({
+                      name: "",
+                      group_mode: "select",
+                      test_url: "",
+                      test_interval_sec: 300,
+                      rules: [],
+                    });
+                    queueFilteredGroupPreview();
+                  }}
+                />
+              </Tooltip>
             </Space>
           )}
         </Form.List>
@@ -689,13 +700,14 @@ export default function MainConfigEditorDrawer({
                             title="Remove this manual group?"
                             onConfirm={() => remove(field.name)}
                           >
-                            <Button
-                              danger
-                              size="small"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              Remove
-                            </Button>
+                            <Tooltip title="Remove">
+                              <Button
+                                danger
+                                size="small"
+                                icon={<DeleteOutlined />}
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                            </Tooltip>
                           </Popconfirm>
                         </Space>
                       ),
@@ -798,25 +810,26 @@ export default function MainConfigEditorDrawer({
                                               total={memberFields.length}
                                               onMove={memberOps.move}
                                             />
-                                            <Button danger onClick={() => memberOps.remove(memberField.name)}>
-                                              Del
-                                            </Button>
+                                            <Tooltip title="Delete">
+                                              <Button danger icon={<DeleteOutlined />} onClick={() => memberOps.remove(memberField.name)} />
+                                            </Tooltip>
                                           </Space>
                                         </Form.Item>
                                       </Col>
                                     </Row>
                                   </Card>
                                 ))}
-                                <Button
-                                  onClick={() =>
-                                    memberOps.add({
-                                      member_type: "filtered_group",
-                                      member_ref: "",
-                                    })
-                                  }
-                                >
-                                  Add Manual Member
-                                </Button>
+                                <Tooltip title="Add Manual Member">
+                                  <Button
+                                    icon={<PlusOutlined />}
+                                    onClick={() =>
+                                      memberOps.add({
+                                        member_type: "filtered_group",
+                                        member_ref: "",
+                                      })
+                                    }
+                                  />
+                                </Tooltip>
                               </Space>
                             )}
                           </Form.List>
@@ -826,19 +839,20 @@ export default function MainConfigEditorDrawer({
                   ]}
                 />
               ))}
-              <Button
-                onClick={() =>
-                  add({
-                    name: "",
-                    group_mode: "select",
-                    test_url: "",
-                    test_interval_sec: 300,
-                    members: [],
-                  })
-                }
-              >
-                Add Manual Group
-              </Button>
+              <Tooltip title="Add Manual Group">
+                <Button
+                  icon={<PlusOutlined />}
+                  onClick={() =>
+                    add({
+                      name: "",
+                      group_mode: "select",
+                      test_url: "",
+                      test_interval_sec: 300,
+                      members: [],
+                    })
+                  }
+                />
+              </Tooltip>
             </Space>
           )}
         </Form.List>
@@ -873,25 +887,26 @@ export default function MainConfigEditorDrawer({
                       <Form.Item label=" ">
                         <Space size={4}>
                           <MoveControls index={index} total={fields.length} onMove={move} />
-                          <Button danger onClick={() => remove(field.name)}>
-                            Del
-                          </Button>
+                          <Tooltip title="Delete">
+                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                          </Tooltip>
                         </Space>
                       </Form.Item>
                     </Col>
                   </Row>
                 </Card>
               ))}
-              <Button
-                onClick={() =>
-                  add({
-                    filtered_group_name: "",
-                    dialer_group_name: "",
-                  })
-                }
-              >
-                Add Dialer Override
-              </Button>
+              <Tooltip title="Add Dialer Override">
+                <Button
+                  icon={<PlusOutlined />}
+                  onClick={() =>
+                    add({
+                      filtered_group_name: "",
+                      dialer_group_name: "",
+                    })
+                  }
+                />
+              </Tooltip>
             </Space>
           )}
         </Form.List>
@@ -906,15 +921,6 @@ export default function MainConfigEditorDrawer({
                   <Row gutter={12}>
                     <Col span={6}>
                       <Form.Item
-                        name={[field.name, "binding_name"]}
-                        label="Binding Name"
-                        rules={[{ required: true }]}
-                      >
-                        <Input />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item
                         name={[field.name, "rule_source_id"]}
                         label="Rule Source"
                         rules={[{ required: true }]}
@@ -926,6 +932,26 @@ export default function MainConfigEditorDrawer({
                           }))}
                           showSearch
                         />
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      <Form.Item noStyle shouldUpdate>
+                        {() => {
+                          const ruleSourceId = form.getFieldValue([
+                            "shunt_bindings",
+                            field.name,
+                            "rule_source_id",
+                          ]) as string | undefined;
+                          const ruleName = rules.find(r => r.id === ruleSourceId)?.name;
+                          return (
+                            <Form.Item
+                              name={[field.name, "binding_name"]}
+                              label="Binding Name"
+                            >
+                              <Input placeholder={ruleName || "Same as rule source"} />
+                            </Form.Item>
+                          );
+                        }}
                       </Form.Item>
                     </Col>
                     <Col span={5}>
@@ -946,27 +972,28 @@ export default function MainConfigEditorDrawer({
                       <Form.Item label=" ">
                         <Space size={4}>
                           <MoveControls index={index} total={fields.length} onMove={move} />
-                          <Button danger onClick={() => remove(field.name)}>
-                            Remove
-                          </Button>
+                          <Tooltip title="Remove">
+                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                          </Tooltip>
                         </Space>
                       </Form.Item>
                     </Col>
                   </Row>
                 </Card>
               ))}
-              <Button
-                onClick={() =>
-                  add({
-                    binding_name: "",
-                    rule_source_id: "",
-                    default_group_name: "",
-                    no_resolve: false,
-                  })
-                }
-              >
-                Add Shunt Binding
-              </Button>
+              <Tooltip title="Add Shunt Binding">
+                <Button
+                  icon={<PlusOutlined />}
+                  onClick={() =>
+                    add({
+                      binding_name: "",
+                      rule_source_id: "",
+                      default_group_name: "",
+                      no_resolve: false,
+                    })
+                  }
+                />
+              </Tooltip>
             </Space>
           )}
         </Form.List>

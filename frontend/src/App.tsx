@@ -1,4 +1,5 @@
-import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
+import { Button, Layout, Menu, Space, Tag, Tooltip, Typography } from "antd";
+import { LogoutOutlined } from "@ant-design/icons";
 import { ErrorBoundary } from "react-error-boundary";
 import {
   Link,
@@ -61,9 +62,9 @@ function ProtectedAppLayout() {
           ]}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
         />
-        <Button size="small" onClick={doLogout}>
-          Logout
-        </Button>
+        <Tooltip title="Logout">
+          <Button size="small" icon={<LogoutOutlined />} onClick={doLogout} />
+        </Tooltip>
       </Header>
 
       <Content style={{ padding: 24 }}>
