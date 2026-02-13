@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.schemas.configs import BuilderPayload
 from app.services.common import GenerationError, slugify_name, utc_now
+from app.services.refresh_loop import refresh_loop_manager
 
 
 class GenerationDiagnosticsData(BaseModel):
@@ -332,8 +333,6 @@ async def _load_builder_state(db: AsyncSession, payload: BuilderPayload) -> Buil
 async def generate_config_yaml(
     db: AsyncSession,
     config: MainConfig,
-    enqueue_subscription_refresh,
-    enqueue_rule_refresh,
 ) -> GenerationResult:
     payload = BuilderPayload(
         filtered_groups=config.filtered_groups,
@@ -349,14 +348,12 @@ async def generate_config_yaml(
         final_target_type=config.final_target_type,
         final_target_group_name=config.final_target_group_name,
     )
-    return await _run_generation(state, fields, enqueue_subscription_refresh, enqueue_rule_refresh)
+    return await _run_generation(state, fields)
 
 
 async def generate_config_yaml_from_draft(
     db: AsyncSession,
     payload,
-    enqueue_subscription_refresh,
-    enqueue_rule_refresh,
 ) -> GenerationResult:
     state = await _load_builder_state(db, payload.builder)
     fields = ConfigFields(
@@ -366,14 +363,12 @@ async def generate_config_yaml_from_draft(
         final_target_type=payload.final_target_type,
         final_target_group_name=payload.final_target_group_name,
     )
-    return await _run_generation(state, fields, enqueue_subscription_refresh, enqueue_rule_refresh)
+    return await _run_generation(state, fields)
 
 
 async def _run_generation(
     state: BuilderState,
     config: ConfigFields,
-    enqueue_subscription_refresh,
-    enqueue_rule_refresh,
 ) -> GenerationResult:
     diagnostics = GenerationDiagnosticsData(
         stale_subscription_ids=[],
@@ -394,7 +389,7 @@ async def _run_generation(
 
         if source.mode == "remote" and source.auto_update and _is_stale(source.next_refresh_at):
             diagnostics.stale_subscription_ids.append(source.id)
-            await enqueue_subscription_refresh(source.id)
+            await refresh_loop_manager.enqueue_subscription_refresh(source.id)
 
         if not source.cached_proxies_json:
             raise GenerationError(
@@ -564,7 +559,7 @@ async def _run_generation(
 
         if rule_source.mode == "remote" and rule_source.auto_update and _is_stale(rule_source.next_refresh_at):
             diagnostics.stale_rule_ids.append(rule_source.id)
-            await enqueue_rule_refresh(rule_source.id)
+            await refresh_loop_manager.enqueue_rule_refresh(rule_source.id)
 
         shunt_group_members = _dedupe_keep_order(
             [binding.default_group_name, "DIRECT"]

@@ -31,7 +31,6 @@ from app.services.main_configs import (
     validate_builder_refs,
     validate_builder_shapes,
 )
-from app.services.refresh_loop import refresh_loop_manager
 
 router = APIRouter(
     prefix="/admin/main-configs",
@@ -92,8 +91,6 @@ async def preview_draft_endpoint(
         result = await generate_config_yaml_from_draft(
             db,
             payload,
-            enqueue_subscription_refresh=refresh_loop_manager.enqueue_subscription_refresh,
-            enqueue_rule_refresh=refresh_loop_manager.enqueue_rule_refresh,
         )
         return PreviewWithDiagnosticsResponse(
             yaml=result.yaml,
@@ -170,8 +167,6 @@ async def preview_config_endpoint(
         result = await generate_config_yaml(
             db,
             config,
-            enqueue_subscription_refresh=refresh_loop_manager.enqueue_subscription_refresh,
-            enqueue_rule_refresh=refresh_loop_manager.enqueue_rule_refresh,
         )
         return PreviewWithDiagnosticsResponse(
             yaml=result.yaml,

@@ -8,7 +8,6 @@ from app.db.database import get_db
 from app.models import MainConfig, RuleSource
 from app.services.common import GenerationError
 from app.services.generator import generate_config_yaml, render_rule_source_yaml
-from app.services.refresh_loop import refresh_loop_manager
 
 router = APIRouter(prefix="/public/configs", tags=["public-configs"])
 
@@ -40,8 +39,6 @@ async def get_artifact(
         result = await generate_config_yaml(
             db,
             config,
-            enqueue_subscription_refresh=refresh_loop_manager.enqueue_subscription_refresh,
-            enqueue_rule_refresh=refresh_loop_manager.enqueue_rule_refresh,
         )
     except GenerationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
