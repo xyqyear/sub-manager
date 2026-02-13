@@ -57,7 +57,7 @@ Each rule source has a behavior type: `classical` (full rule syntax), `domain` (
 
 This is where everything comes together. A main config has:
 - A base YAML (ports, DNS, TUN settings, etc. — everything except proxies, groups, and rules)
-- A **builder** that visually composes proxy groups and routing rules (see below)
+- Four builder field groups (filtered groups, manual groups, dialer overrides, shunt bindings) that visually compose proxy groups and routing rules (see below)
 - A password for public access
 
 ### The Builder
@@ -125,18 +125,18 @@ backend/
       health.py                    # GET /api/admin/health
       subscriptions.py             # subscription CRUD + refresh
       rules.py                     # rule CRUD + refresh
-      main_configs.py              # config CRUD + builder + preview + filtered-group-preview
+      main_configs.py              # config CRUD + preview + filtered-group-preview
     routers/public/
       configs.py                   # public artifact + rule-payload fetch (password protected)
     schemas/                       # pydantic request/response models
       subscriptions.py
       rules.py
-      configs.py                   # BuilderPayload, PreviewWithDiagnosticsResponse, DraftPreviewRequest, etc.
+      configs.py                   # MainConfigCreate/Update/Read, DraftPreviewRequest, PreviewWithDiagnosticsResponse, etc.
     services/                      # business logic
       common.py                    # ServiceError, GenerationError, jitter, slugify, parsing
       subscriptions.py             # subscription CRUD + remote fetch + cache
       rules.py                     # rule CRUD + remote fetch + validation
-      main_configs.py              # config CRUD + builder replace + validation
+      main_configs.py              # config CRUD + validation
       generator.py                 # YAML assembly engine
       refresh_loop.py              # in-process async background refresh
   tests/
@@ -203,11 +203,11 @@ All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` t
 
 ## Config Generation Engine (`services/generator.py`)
 
-The generation pipeline (single code path for both saved configs and draft previews):
+The generation pipeline uses a single `GenerationInput` model and `generate_config_yaml()` entry point for both saved configs and draft previews. Callers construct `GenerationInput` from either a `MainConfig` ORM object or a `DraftPreviewRequest` schema.
 
-1. **Build `BuilderPayload`** - From `MainConfig` JSON columns (saved) or from `DraftPreviewRequest` (draft).
-2. **Load builder state** - `_load_builder_state()` converts `BuilderPayload` into internal `BuilderState`, fetching referenced `SubscriptionSource` and `RuleSource` rows from DB.
-3. **Load subscriptions** - Derive subscription IDs from filtered group rules (first-seen order). Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
+1. **Fetch subscriptions** - `_fetch_subscriptions()` derives subscription IDs from filtered group rules (first-seen order), fetches `SubscriptionSource` rows from DB.
+2. **Fetch rule sources** - `_fetch_rule_sources()` fetches `RuleSource` rows referenced by shunt bindings.
+3. **Load subscriptions** - Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
 4. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
 5. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
 6. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
@@ -247,8 +247,6 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 | POST   | `/api/admin/main-configs`                             | Create config               |
 | PUT    | `/api/admin/main-configs/{id}`                        | Update config               |
 | DELETE | `/api/admin/main-configs/{id}`                        | Delete config               |
-| GET    | `/api/admin/main-configs/{id}/builder`                | Get builder state           |
-| PUT    | `/api/admin/main-configs/{id}/builder`                | Replace builder (full swap) |
 | POST   | `/api/admin/main-configs/{id}/preview`                | Preview generated YAML      |
 | POST   | `/api/admin/main-configs/filtered-groups/preview`     | Preview filtered group matches |
 | POST   | `/api/admin/main-configs/preview-draft`               | Preview uncommitted builder changes |
@@ -263,9 +261,11 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 ## Key Backend Schemas
 
 ```python
-# Builder payload (PUT /api/admin/main-configs/{id}/builder)
-# Also used as the response type for GET builder and as JSON columns on MainConfig
-BuilderPayload:
+# MainConfigCreate (POST /api/admin/main-configs)
+# MainConfigUpdate (PUT /api/admin/main-configs/{id}) — all fields optional
+# MainConfigRead — response model, includes all fields below
+MainConfig fields:
+  name, password_plain, base_config_yaml, enabled, final_target_type, final_target_group_name
   filtered_groups: [{name, position, group_mode, test_url?, test_interval_sec?, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
   manual_groups: [{name, position, group_mode, test_url?, test_interval_sec?, members: [{member_type, member_ref, position}]}]
   dialer_override_rules: [{filtered_group_name, dialer_group_name}]
@@ -278,12 +278,20 @@ DraftPreviewRequest:
   final_target_type: FinalTargetType
   final_target_group_name: str | None
   config_id: str | None
-  builder: BuilderPayload
+  filtered_groups: list[FilteredGroupPayload]  # same shape as MainConfig fields
+  manual_groups: list[ManualGroupPayload]
+  dialer_override_rules: list[DialerOverridePayload]
+  shunt_bindings: list[ShuntBindingPayload]
 
 # Preview response
 PreviewWithDiagnosticsResponse:
   yaml: str
   diagnostics: {stale_subscription_ids, stale_rule_ids, warnings}
+
+# Generator input (internal, not an API schema)
+GenerationInput:
+  config_id, base_config_yaml, password_plain, final_target_type, final_target_group_name
+  filtered_groups, manual_groups, dialer_override_rules, shunt_bindings
 
 # Type enums
 GroupMode: "select" | "fallback" | "url-test"

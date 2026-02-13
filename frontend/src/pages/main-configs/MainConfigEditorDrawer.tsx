@@ -22,7 +22,6 @@ import {
 import { DownOutlined, UpOutlined } from "@ant-design/icons";
 import { type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type {
-  BuilderState,
   FilteredGroupPreviewResponse,
   GroupMode,
   MainConfig,
@@ -51,7 +50,7 @@ type EditorFormValues = {
   enabled: boolean;
   final_target_type: FinalTargetType;
   final_target_group_name?: string;
-} & BuilderState;
+} & Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "shunt_bindings">;
 
 const DEFAULT_BASE_YAML = "mixed-port: 7890\nmode: rule\n";
 
@@ -124,7 +123,7 @@ function MoveControls({ index, total, onMove }: MoveControlsProps) {
   );
 }
 
-function normalizeBuilderPayload(values: EditorFormValues): BuilderState {
+function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "shunt_bindings"> {
   return {
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
@@ -175,7 +174,6 @@ export default function MainConfigEditorDrawer({
 }: MainConfigEditorDrawerProps) {
   const [form] = Form.useForm<EditorFormValues>();
   const [saving, setSaving] = useState(false);
-  const [loadingBuilder, setLoadingBuilder] = useState(false);
   const [filteredGroupPreviews, setFilteredGroupPreviews] =
     useState<FilteredGroupPreviewResponse["groups"]>([]);
   const [previewing, setPreviewing] = useState(false);
@@ -296,42 +294,22 @@ export default function MainConfigEditorDrawer({
         return;
       }
 
-      setLoadingBuilder(true);
-      try {
-        const builderResponse = await api.get<BuilderState>(
-          `/admin/main-configs/${config.id}/builder`,
-        );
-
-        form.resetFields();
-        const nextValues: EditorFormValues = {
-          ...defaultValues,
-          ...builderResponse.data,
-          name: config.name,
-          password_plain: config.password_plain,
-          base_config_yaml: config.base_config_yaml,
-          enabled: config.enabled,
-          final_target_type: config.final_target_type,
-          final_target_group_name: config.final_target_group_name ?? "",
-        };
-        form.setFieldsValue(nextValues);
-        queueFilteredGroupPreview(nextValues);
-      } catch (error) {
-        void message.error(String(error));
-        form.resetFields();
-        const fallbackValues: EditorFormValues = {
-          ...defaultValues,
-          name: config.name,
-          password_plain: config.password_plain,
-          base_config_yaml: config.base_config_yaml,
-          enabled: config.enabled,
-          final_target_type: config.final_target_type,
-          final_target_group_name: config.final_target_group_name ?? "",
-        };
-        form.setFieldsValue(fallbackValues);
-        queueFilteredGroupPreview(fallbackValues);
-      } finally {
-        setLoadingBuilder(false);
-      }
+      form.resetFields();
+      const nextValues: EditorFormValues = {
+        ...defaultValues,
+        name: config.name,
+        password_plain: config.password_plain,
+        base_config_yaml: config.base_config_yaml,
+        enabled: config.enabled,
+        final_target_type: config.final_target_type,
+        final_target_group_name: config.final_target_group_name ?? "",
+        filtered_groups: config.filtered_groups,
+        manual_groups: config.manual_groups,
+        dialer_override_rules: config.dialer_override_rules,
+        shunt_bindings: config.shunt_bindings,
+      };
+      form.setFieldsValue(nextValues);
+      queueFilteredGroupPreview(nextValues);
     };
 
     void init();
@@ -341,7 +319,7 @@ export default function MainConfigEditorDrawer({
     try {
       const values = form.getFieldsValue(true) as EditorFormValues;
       setPreviewing(true);
-      const builder = normalizeBuilderPayload(values);
+      const groupFields = normalizeGroupFields(values);
       const payload = {
         base_config_yaml: values.base_config_yaml,
         password_plain: values.password_plain,
@@ -351,7 +329,7 @@ export default function MainConfigEditorDrawer({
             ? values.final_target_group_name ?? null
             : null,
         config_id: config?.id ?? null,
-        builder,
+        ...groupFields,
       };
       const response = await api.post<PreviewResponse>(
         "/admin/main-configs/preview-draft",
@@ -372,7 +350,8 @@ export default function MainConfigEditorDrawer({
       const values = await form.validateFields();
       setSaving(true);
 
-      const mainPayload = {
+      const groupFields = normalizeGroupFields(values);
+      const payload = {
         name: values.name,
         password_plain: values.password_plain,
         base_config_yaml: values.base_config_yaml,
@@ -382,25 +361,14 @@ export default function MainConfigEditorDrawer({
           values.final_target_type === "group"
             ? values.final_target_group_name ?? null
             : null,
+        ...groupFields,
       };
 
-      let savedConfig: MainConfig;
       if (config) {
-        const response = await api.put<MainConfig>(
-          `/admin/main-configs/${config.id}`,
-          mainPayload,
-        );
-        savedConfig = response.data;
+        await api.put<MainConfig>(`/admin/main-configs/${config.id}`, payload);
       } else {
-        const response = await api.post<MainConfig>(
-          "/admin/main-configs",
-          mainPayload,
-        );
-        savedConfig = response.data;
+        await api.post<MainConfig>("/admin/main-configs", payload);
       }
-
-      const builderPayload = normalizeBuilderPayload(values);
-      await api.put(`/admin/main-configs/${savedConfig.id}/builder`, builderPayload);
 
       void message.success(config ? "Main config updated" : "Main config created");
       await onSaved();
@@ -425,7 +393,7 @@ export default function MainConfigEditorDrawer({
             Preview
           </Button>
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="primary" loading={saving || loadingBuilder} onClick={() => void submit()}>
+          <Button type="primary" loading={saving} onClick={() => void submit()}>
             Save
           </Button>
         </Space>

@@ -12,12 +12,15 @@ from app.models import (
     SubscriptionSource,
 )
 from app.schemas.configs import (
-    BuilderPayload,
+    FilteredGroupPayload,
     FilteredGroupPreviewItem,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
     MainConfigCreate,
     MainConfigUpdate,
+    ManualGroupPayload,
+    DialerOverridePayload,
+    ShuntBindingPayload,
 )
 from app.services.common import ServiceError, dedupe_keep_order
 from app.services.generator import (
@@ -61,6 +64,13 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
     await _assert_unique_config_name(db, payload.name)
     validate_base_yaml(payload.base_config_yaml)
 
+    if payload.filtered_groups or payload.shunt_bindings or payload.manual_groups or payload.dialer_override_rules:
+        validate_builder_shapes(
+            payload.filtered_groups, payload.manual_groups,
+            payload.dialer_override_rules, payload.shunt_bindings,
+        )
+        await validate_builder_refs(db, payload.filtered_groups, payload.shunt_bindings)
+
     config = MainConfig(
         name=payload.name,
         password_plain=payload.password_plain,
@@ -68,6 +78,10 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
         enabled=payload.enabled,
         final_target_type=payload.final_target_type,
         final_target_group_name=payload.final_target_group_name,
+        filtered_groups=payload.filtered_groups,
+        manual_groups=payload.manual_groups,
+        dialer_override_rules=payload.dialer_override_rules,
+        shunt_bindings=payload.shunt_bindings,
     )
 
     db.add(config)
@@ -97,6 +111,22 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
     if payload.final_target_group_name is not None:
         config.final_target_group_name = payload.final_target_group_name
 
+    builder_changed = any(
+        getattr(payload, f) is not None
+        for f in ("filtered_groups", "manual_groups", "dialer_override_rules", "shunt_bindings")
+    )
+    if builder_changed:
+        fg = payload.filtered_groups if payload.filtered_groups is not None else config.filtered_groups
+        mg = payload.manual_groups if payload.manual_groups is not None else config.manual_groups
+        dor = payload.dialer_override_rules if payload.dialer_override_rules is not None else config.dialer_override_rules
+        sb = payload.shunt_bindings if payload.shunt_bindings is not None else config.shunt_bindings
+        validate_builder_shapes(fg, mg, dor, sb)
+        await validate_builder_refs(db, fg, sb)
+        config.filtered_groups = fg
+        config.manual_groups = mg
+        config.dialer_override_rules = dor
+        config.shunt_bindings = sb
+
     db.add(config)
     await db.commit()
     await db.refresh(config)
@@ -120,10 +150,14 @@ async def delete_main_config(db: AsyncSession, config: MainConfig) -> None:
     await db.commit()
 
 
-async def validate_builder_refs(db: AsyncSession, payload: BuilderPayload) -> None:
+async def validate_builder_refs(
+    db: AsyncSession,
+    filtered_groups: list[FilteredGroupPayload],
+    shunt_bindings: list[ShuntBindingPayload],
+) -> None:
     subscription_ids = {
         rule.subscription_source_id
-        for group in payload.filtered_groups
+        for group in filtered_groups
         for rule in group.rules
     }
     if subscription_ids:
@@ -135,7 +169,7 @@ async def validate_builder_refs(db: AsyncSession, payload: BuilderPayload) -> No
         if missing:
             raise ServiceError(f"unknown subscription_source_id: {sorted(missing)}", 422)
 
-    rule_ids = {item.rule_source_id for item in payload.shunt_bindings}
+    rule_ids = {item.rule_source_id for item in shunt_bindings}
     if rule_ids:
         result = await db.execute(select(RuleSource.id).where(RuleSource.id.in_(rule_ids)))
         found = set(result.scalars().all())
@@ -144,9 +178,14 @@ async def validate_builder_refs(db: AsyncSession, payload: BuilderPayload) -> No
             raise ServiceError(f"unknown rule_source_id: {sorted(missing)}", 422)
 
 
-def validate_builder_shapes(payload: BuilderPayload) -> None:
-    filtered_names = [item.name for item in payload.filtered_groups]
-    manual_names = [item.name for item in payload.manual_groups]
+def validate_builder_shapes(
+    filtered_groups: list[FilteredGroupPayload],
+    manual_groups: list[ManualGroupPayload],
+    dialer_override_rules: list[DialerOverridePayload],
+    shunt_bindings: list[ShuntBindingPayload],
+) -> None:
+    filtered_names = [item.name for item in filtered_groups]
+    manual_names = [item.name for item in manual_groups]
     all_group_names = filtered_names + manual_names
 
     duplicates = {name for name in all_group_names if all_group_names.count(name) > 1}
@@ -157,7 +196,7 @@ def validate_builder_shapes(payload: BuilderPayload) -> None:
     manual_set = set(manual_names)
     filtered_set = set(filtered_names)
 
-    for group in payload.filtered_groups:
+    for group in filtered_groups:
         for rule in group.rules:
             flags = 0
             if "i" in rule.regex_flags:
@@ -171,7 +210,7 @@ def validate_builder_shapes(payload: BuilderPayload) -> None:
                 ) from exc
 
     deps: dict[str, set[str]] = {}
-    for group in payload.manual_groups:
+    for group in manual_groups:
         for member in group.members:
             if member.member_type == "filtered_group":
                 if member.member_ref not in filtered_set:
@@ -209,7 +248,7 @@ def validate_builder_shapes(payload: BuilderPayload) -> None:
     for item in manual_set:
         visit(item)
 
-    for item in payload.dialer_override_rules:
+    for item in dialer_override_rules:
         if item.filtered_group_name not in filtered_set:
             raise ServiceError(
                 f"dialer references unknown filtered group: {item.filtered_group_name}",
@@ -221,44 +260,12 @@ def validate_builder_shapes(payload: BuilderPayload) -> None:
                 422,
             )
 
-    for binding in payload.shunt_bindings:
+    for binding in shunt_bindings:
         if binding.default_group_name not in group_name_set | {"DIRECT", "REJECT"}:
             raise ServiceError(
                 f"shunt default group not found: {binding.default_group_name}",
                 422,
             )
-
-
-async def get_builder(db: AsyncSession, config_id: str) -> BuilderPayload:
-    config = await get_main_config_or_404(db, config_id)
-    return BuilderPayload(
-        filtered_groups=config.filtered_groups,
-        manual_groups=config.manual_groups,
-        dialer_override_rules=config.dialer_override_rules,
-        shunt_bindings=config.shunt_bindings,
-    )
-
-
-async def replace_builder(db: AsyncSession, config_id: str, payload: BuilderPayload) -> BuilderPayload:
-    await validate_builder_refs(db, payload)
-    validate_builder_shapes(payload)
-
-    config = await get_main_config_or_404(db, config_id)
-    config.filtered_groups = payload.filtered_groups
-    config.manual_groups = payload.manual_groups
-    config.dialer_override_rules = payload.dialer_override_rules
-    config.shunt_bindings = payload.shunt_bindings
-
-    db.add(config)
-    await db.commit()
-    await db.refresh(config)
-
-    return BuilderPayload(
-        filtered_groups=config.filtered_groups,
-        manual_groups=config.manual_groups,
-        dialer_override_rules=config.dialer_override_rules,
-        shunt_bindings=config.shunt_bindings,
-    )
 
 
 async def preview_filtered_group_matches(

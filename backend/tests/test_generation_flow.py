@@ -103,59 +103,53 @@ async def test_generation_flow_manual_sources(client, admin_headers):
             "password_plain": "pw1",
             "base_config_yaml": "mixed-port: 7890\nmode: rule\n",
             "final_target_type": "DIRECT",
+            "filtered_groups": [
+                {
+                    "name": "FG-A",
+                    "position": 1,
+                    "group_mode": "select",
+                    "rules": [
+                        {
+                            "subscription_source_id": subscription_id,
+                            "regex_pattern": ".*",
+                            "regex_flags": "",
+                            "position": 1,
+                        }
+                    ],
+                }
+            ],
+            "manual_groups": [
+                {
+                    "name": "MG-A",
+                    "position": 1,
+                    "group_mode": "select",
+                    "members": [
+                        {
+                            "member_type": "filtered_group",
+                            "member_ref": "FG-A",
+                            "position": 1,
+                        }
+                    ],
+                }
+            ],
+            "dialer_override_rules": [],
+            "shunt_bindings": [
+                {
+                    "position": 1,
+                    "binding_name": "SHUNT-1",
+                    "rule_source_id": rule_id,
+                    "default_group_name": "FG-A",
+                    "no_resolve": False,
+                }
+            ],
         },
     )
     assert config_response.status_code == 200, config_response.text
-    config_id = config_response.json()["id"]
+    config_data = config_response.json()
+    config_id = config_data["id"]
 
-    builder_payload = {
-        "filtered_groups": [
-            {
-                "name": "FG-A",
-                "position": 1,
-                "group_mode": "select",
-                "rules": [
-                    {
-                        "subscription_source_id": subscription_id,
-                        "regex_pattern": ".*",
-                        "regex_flags": "",
-                        "position": 1,
-                    }
-                ],
-            }
-        ],
-        "manual_groups": [
-            {
-                "name": "MG-A",
-                "position": 1,
-                "group_mode": "select",
-                "members": [
-                    {
-                        "member_type": "filtered_group",
-                        "member_ref": "FG-A",
-                        "position": 1,
-                    }
-                ],
-            }
-        ],
-        "dialer_override_rules": [],
-        "shunt_bindings": [
-            {
-                "position": 1,
-                "binding_name": "SHUNT-1",
-                "rule_source_id": rule_id,
-                "default_group_name": "FG-A",
-                "no_resolve": False,
-            }
-        ],
-    }
-
-    put_builder_response = await client.put(
-        f"/api/admin/main-configs/{config_id}/builder",
-        headers=admin_headers,
-        json=builder_payload,
-    )
-    assert put_builder_response.status_code == 200, put_builder_response.text
+    assert len(config_data["filtered_groups"]) == 1
+    assert len(config_data["shunt_bindings"]) == 1
 
     artifact_response = await client.get(
         f"/api/public/configs/{config_id}/artifact",

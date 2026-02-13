@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_admin_token
 from app.db.database import get_db
 from app.schemas.configs import (
-    BuilderPayload,
     DraftPreviewRequest,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
@@ -17,15 +16,13 @@ from app.schemas.configs import (
     PreviewWithDiagnosticsResponse,
 )
 from app.services.common import GenerationError, ServiceError, to_http_error
-from app.services.generator import generate_config_yaml, generate_config_yaml_from_draft
+from app.services.generator import GenerationInput, generate_config_yaml
 from app.services.main_configs import (
     create_main_config,
     delete_main_config,
-    get_builder,
     get_main_config_or_404,
     list_main_configs,
     preview_filtered_group_matches,
-    replace_builder,
     update_main_config,
     validate_base_yaml,
     validate_builder_refs,
@@ -77,11 +74,14 @@ async def preview_draft_endpoint(
 ) -> PreviewWithDiagnosticsResponse:
     try:
         validate_base_yaml(payload.base_config_yaml)
-        validate_builder_shapes(payload.builder)
-        await validate_builder_refs(db, payload.builder)
-        result = await generate_config_yaml_from_draft(
+        validate_builder_shapes(
+            payload.filtered_groups, payload.manual_groups,
+            payload.dialer_override_rules, payload.shunt_bindings,
+        )
+        await validate_builder_refs(db, payload.filtered_groups, payload.shunt_bindings)
+        result = await generate_config_yaml(
             db,
-            payload,
+            GenerationInput.from_draft(payload),
         )
         return PreviewWithDiagnosticsResponse(
             yaml=result.yaml,
@@ -124,30 +124,6 @@ async def delete_main_config_endpoint(
         raise to_http_error(exc)
 
 
-@router.get("/{config_id}/builder", response_model=BuilderPayload)
-async def get_builder_endpoint(
-    config_id: str,
-    db: AsyncSession = Depends(get_db),
-) -> BuilderPayload:
-    try:
-        return await get_builder(db, config_id)
-    except ServiceError as exc:
-        raise to_http_error(exc)
-
-
-@router.put("/{config_id}/builder", response_model=BuilderPayload)
-async def put_builder_endpoint(
-    config_id: str,
-    payload: BuilderPayload,
-    db: AsyncSession = Depends(get_db),
-) -> BuilderPayload:
-    try:
-        _ = await get_main_config_or_404(db, config_id)
-        return await replace_builder(db, config_id, payload)
-    except ServiceError as exc:
-        raise to_http_error(exc)
-
-
 @router.post("/{config_id}/preview", response_model=PreviewWithDiagnosticsResponse)
 async def preview_config_endpoint(
     config_id: str,
@@ -157,7 +133,7 @@ async def preview_config_endpoint(
         config = await get_main_config_or_404(db, config_id)
         result = await generate_config_yaml(
             db,
-            config,
+            GenerationInput.from_main_config(config),
         )
         return PreviewWithDiagnosticsResponse(
             yaml=result.yaml,

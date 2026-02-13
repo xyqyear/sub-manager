@@ -48,11 +48,6 @@ export interface MainConfig {
   enabled: boolean;
   final_target_type: "DIRECT" | "REJECT" | "group";
   final_target_group_name: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BuilderState {
   filtered_groups: {
     name: string;
     position: number;
@@ -89,6 +84,8 @@ export interface BuilderState {
     default_group_name: string;
     no_resolve: boolean;
   }[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PreviewResponse {

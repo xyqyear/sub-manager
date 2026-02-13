@@ -16,7 +16,13 @@ from app.models import (
     RuleSource,
     SubscriptionSource,
 )
-from app.schemas.configs import BuilderPayload
+from app.schemas.configs import (
+    DialerOverridePayload,
+    DraftPreviewRequest,
+    FilteredGroupPayload,
+    ManualGroupPayload,
+    ShuntBindingPayload,
+)
 from app.services.common import GenerationError, dedupe_keep_order, slugify_name, utc_now
 from app.services.refresh_loop import refresh_loop_manager
 
@@ -27,71 +33,46 @@ class GenerationDiagnosticsData(BaseModel):
     warnings: list[str]
 
 
-class ConfigFields(BaseModel):
-    id: str | None
-    password_plain: str
-    base_config_yaml: str
-    final_target_type: str
-    final_target_group_name: str | None
-
-
-class FilteredGroup(BaseModel):
-    id: str
-    name: str
-    group_mode: str
-    test_url: str | None
-    test_interval_sec: int | None
-
-
-class FilteredGroupRule(BaseModel):
-    filtered_group_id: str
-    subscription_source_id: str
-    regex_pattern: str
-    regex_flags: str
-    position: int
-
-
-class ManualGroup(BaseModel):
-    id: str
-    name: str
-    group_mode: str
-    test_url: str | None
-    test_interval_sec: int | None
-
-
-class ManualGroupMember(BaseModel):
-    manual_group_id: str
-    member_type: str
-    member_ref: str
-    position: int
-
-
-class DialerOverrideRule(BaseModel):
-    filtered_group_name: str
-    dialer_group_name: str
-    position: int
-
-
-class ShuntBinding(BaseModel):
-    binding_name: str
-    rule_source_id: str
-    default_group_name: str
-    no_resolve: bool
-    position: int
-
-
-class BuilderState(BaseModel):
+class GenerationInput(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    sub_ids_ordered: list[str]
-    sub_map: dict[str, SubscriptionSource]
-    filtered_groups: list[FilteredGroup]
-    filtered_rules: list[FilteredGroupRule]
-    manual_groups: list[ManualGroup]
-    manual_members: list[ManualGroupMember]
-    dialer_rules: list[DialerOverrideRule]
-    shunt_bindings: list[ShuntBinding]
-    rule_map: dict[str, RuleSource]
+    config_id: str | None = None
+    base_config_yaml: str
+    password_plain: str
+    final_target_type: str
+    final_target_group_name: str | None = None
+    filtered_groups: list[FilteredGroupPayload] = []
+    manual_groups: list[ManualGroupPayload] = []
+    dialer_override_rules: list[DialerOverridePayload] = []
+    shunt_bindings: list[ShuntBindingPayload] = []
+
+    @staticmethod
+    def from_main_config(config: MainConfig) -> GenerationInput:
+        return GenerationInput(
+            config_id=config.id,
+            base_config_yaml=config.base_config_yaml,
+            password_plain=config.password_plain,
+            final_target_type=config.final_target_type,
+            final_target_group_name=config.final_target_group_name,
+            filtered_groups=config.filtered_groups,
+            manual_groups=config.manual_groups,
+            dialer_override_rules=config.dialer_override_rules,
+            shunt_bindings=config.shunt_bindings,
+        )
+
+    @staticmethod
+    def from_draft(draft: DraftPreviewRequest) -> GenerationInput:
+        return GenerationInput(
+            config_id=draft.config_id,
+            base_config_yaml=draft.base_config_yaml,
+            password_plain=draft.password_plain,
+            final_target_type=draft.final_target_type,
+            final_target_group_name=draft.final_target_group_name,
+            filtered_groups=draft.filtered_groups,
+            manual_groups=draft.manual_groups,
+            dialer_override_rules=draft.dialer_override_rules,
+            shunt_bindings=draft.shunt_bindings,
+        )
 
 
 class OrderedSource(BaseModel):
@@ -224,141 +205,46 @@ def match_filtered_rules_on_proxies(
     return dedupe_keep_order(matched_names)
 
 
-async def _load_builder_state(db: AsyncSession, payload: BuilderPayload) -> BuilderState:
+async def _fetch_subscriptions(
+    db: AsyncSession,
+    filtered_groups: list[FilteredGroupPayload],
+) -> tuple[list[str], dict[str, SubscriptionSource]]:
     sub_ids_ordered: list[str] = []
-    seen_sub_ids: set[str] = set()
-    for group in payload.filtered_groups:
+    seen: set[str] = set()
+    for group in sorted(filtered_groups, key=lambda g: g.position):
         for rule in sorted(group.rules, key=lambda r: r.position):
-            if rule.subscription_source_id not in seen_sub_ids:
+            if rule.subscription_source_id not in seen:
                 sub_ids_ordered.append(rule.subscription_source_id)
-                seen_sub_ids.add(rule.subscription_source_id)
+                seen.add(rule.subscription_source_id)
 
-    subscriptions: list[SubscriptionSource] = []
+    sub_map: dict[str, SubscriptionSource] = {}
     if sub_ids_ordered:
-        sub_result = await db.execute(
+        result = await db.execute(
             select(SubscriptionSource).where(SubscriptionSource.id.in_(sub_ids_ordered))
         )
-        subscriptions = list(sub_result.scalars().all())
-    sub_map = {item.id: item for item in subscriptions}
+        sub_map = {item.id: item for item in result.scalars().all()}
 
-    filtered_groups: list[FilteredGroup] = []
-    all_fg_rules: list[FilteredGroupRule] = []
-    for i, fg in enumerate(sorted(payload.filtered_groups, key=lambda g: g.position)):
-        fg_id = f"fg-{i}"
-        filtered_groups.append(FilteredGroup(
-            id=fg_id,
-            name=fg.name,
-            group_mode=fg.group_mode,
-            test_url=fg.test_url,
-            test_interval_sec=fg.test_interval_sec,
-        ))
-        for rule in sorted(fg.rules, key=lambda r: r.position):
-            all_fg_rules.append(FilteredGroupRule(
-                filtered_group_id=fg_id,
-                subscription_source_id=rule.subscription_source_id,
-                regex_pattern=rule.regex_pattern,
-                regex_flags=rule.regex_flags,
-                position=rule.position,
-            ))
+    return sub_ids_ordered, sub_map
 
-    manual_groups: list[ManualGroup] = []
-    all_mg_members: list[ManualGroupMember] = []
-    for i, mg in enumerate(sorted(payload.manual_groups, key=lambda g: g.position)):
-        mg_id = f"mg-{i}"
-        manual_groups.append(ManualGroup(
-            id=mg_id,
-            name=mg.name,
-            group_mode=mg.group_mode,
-            test_url=mg.test_url,
-            test_interval_sec=mg.test_interval_sec,
-        ))
-        for member in sorted(mg.members, key=lambda m: m.position):
-            all_mg_members.append(ManualGroupMember(
-                manual_group_id=mg_id,
-                member_type=member.member_type,
-                member_ref=member.member_ref,
-                position=member.position,
-            ))
 
-    dialer_rules: list[DialerOverrideRule] = []
-    for i, d in enumerate(payload.dialer_override_rules):
-        dialer_rules.append(DialerOverrideRule(
-            filtered_group_name=d.filtered_group_name,
-            dialer_group_name=d.dialer_group_name,
-            position=i + 1,
-        ))
-
-    shunt_bindings: list[ShuntBinding] = []
-    rule_ids: list[str] = []
-    for sb in sorted(payload.shunt_bindings, key=lambda s: s.position):
-        shunt_bindings.append(ShuntBinding(
-            binding_name=sb.binding_name,
-            rule_source_id=sb.rule_source_id,
-            default_group_name=sb.default_group_name,
-            no_resolve=sb.no_resolve,
-            position=sb.position,
-        ))
-        rule_ids.append(sb.rule_source_id)
-
-    orm_rules: list[RuleSource] = []
-    if rule_ids:
-        rules_result = await db.execute(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
-        orm_rules = list(rules_result.scalars().all())
-    rule_map = {item.id: item for item in orm_rules}
-
-    return BuilderState(
-        sub_ids_ordered=sub_ids_ordered,
-        sub_map=sub_map,
-        filtered_groups=filtered_groups,
-        filtered_rules=all_fg_rules,
-        manual_groups=manual_groups,
-        manual_members=all_mg_members,
-        dialer_rules=dialer_rules,
-        shunt_bindings=shunt_bindings,
-        rule_map=rule_map,
-    )
+async def _fetch_rule_sources(
+    db: AsyncSession,
+    shunt_bindings: list[ShuntBindingPayload],
+) -> dict[str, RuleSource]:
+    rule_ids = [sb.rule_source_id for sb in shunt_bindings]
+    if not rule_ids:
+        return {}
+    result = await db.execute(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
+    return {item.id: item for item in result.scalars().all()}
 
 
 async def generate_config_yaml(
     db: AsyncSession,
-    config: MainConfig,
+    source: GenerationInput,
 ) -> GenerationResult:
-    payload = BuilderPayload(
-        filtered_groups=config.filtered_groups,
-        manual_groups=config.manual_groups,
-        dialer_override_rules=config.dialer_override_rules,
-        shunt_bindings=config.shunt_bindings,
-    )
-    state = await _load_builder_state(db, payload)
-    fields = ConfigFields(
-        id=config.id,
-        password_plain=config.password_plain,
-        base_config_yaml=config.base_config_yaml,
-        final_target_type=config.final_target_type,
-        final_target_group_name=config.final_target_group_name,
-    )
-    return await _run_generation(state, fields)
+    sub_ids_ordered, sub_map = await _fetch_subscriptions(db, source.filtered_groups)
+    rule_map = await _fetch_rule_sources(db, source.shunt_bindings)
 
-
-async def generate_config_yaml_from_draft(
-    db: AsyncSession,
-    payload,
-) -> GenerationResult:
-    state = await _load_builder_state(db, payload.builder)
-    fields = ConfigFields(
-        id=payload.config_id,
-        password_plain=payload.password_plain,
-        base_config_yaml=payload.base_config_yaml,
-        final_target_type=payload.final_target_type,
-        final_target_group_name=payload.final_target_group_name,
-    )
-    return await _run_generation(state, fields)
-
-
-async def _run_generation(
-    state: BuilderState,
-    config: ConfigFields,
-) -> GenerationResult:
     diagnostics = GenerationDiagnosticsData(
         stale_subscription_ids=[],
         stale_rule_ids=[],
@@ -366,74 +252,48 @@ async def _run_generation(
     )
 
     ordered_sources: list[OrderedSource] = []
-
-    for source_id in state.sub_ids_ordered:
-        source = state.sub_map.get(source_id)
-        if source is None:
+    for source_id in sub_ids_ordered:
+        sub = sub_map.get(source_id)
+        if sub is None:
             diagnostics.warnings.append(f"subscription not found: {source_id}")
             continue
-        if not source.enabled:
-            diagnostics.warnings.append(f"subscription disabled: {source.name}")
+        if not sub.enabled:
+            diagnostics.warnings.append(f"subscription disabled: {sub.name}")
             continue
-
-        if source.mode == "remote" and source.auto_update and _is_stale(source.next_refresh_at):
-            diagnostics.stale_subscription_ids.append(source.id)
-            await refresh_loop_manager.enqueue_subscription_refresh(source.id)
-
-        if not source.cached_proxies_json:
-            raise GenerationError(
-                f"subscription has no cached proxies: {source.name}",
-                409,
-            )
-
+        if sub.mode == "remote" and sub.auto_update and _is_stale(sub.next_refresh_at):
+            diagnostics.stale_subscription_ids.append(sub.id)
+            await refresh_loop_manager.enqueue_subscription_refresh(sub.id)
+        if not sub.cached_proxies_json:
+            raise GenerationError(f"subscription has no cached proxies: {sub.name}", 409)
         ordered_sources.append(
-            OrderedSource(
-                source_id=source.id,
-                source_name=source.name,
-                cached_proxies=source.cached_proxies_json,
-            ),
+            OrderedSource(source_id=sub.id, source_name=sub.name, cached_proxies=sub.cached_proxies_json)
         )
 
     pool_result = build_proxy_pool_with_collision_names(ordered_sources)
 
-    fg_rules_map: dict[str, list[FilteredGroupRule]] = {}
-    for row in state.filtered_rules:
-        fg_rules_map.setdefault(row.filtered_group_id, []).append(row)
-
+    sorted_fg = sorted(source.filtered_groups, key=lambda g: g.position)
     generated_filtered_groups: list[ProxyGroupObj] = []
     filtered_group_members: dict[str, list[str]] = {}
 
-    for group in state.filtered_groups:
-        members = match_filtered_rules_on_proxies(
-            [
-                FilteredRuleMatch(
-                    source_id=rule.subscription_source_id,
-                    regex_pattern=rule.regex_pattern,
-                    regex_flags=rule.regex_flags,
-                )
-                for rule in fg_rules_map.get(group.id, [])
-            ],
-            pool_result.proxies_by_source,
-        )
-        if not members:
-            raise GenerationError(f"filtered group has no matched proxies: {group.name}", 422)
-
-        filtered_group_members[group.name] = members
-        generated_filtered_groups.append(
-            _build_group_obj(
-                group.name,
-                group.group_mode,
-                members,
-                group.test_url,
-                group.test_interval_sec,
+    for fg in sorted_fg:
+        fg_match_rules = [
+            FilteredRuleMatch(
+                source_id=r.subscription_source_id,
+                regex_pattern=r.regex_pattern,
+                regex_flags=r.regex_flags,
             )
+            for r in sorted(fg.rules, key=lambda r: r.position)
+        ]
+        members = match_filtered_rules_on_proxies(fg_match_rules, pool_result.proxies_by_source)
+        if not members:
+            raise GenerationError(f"filtered group has no matched proxies: {fg.name}", 422)
+        filtered_group_members[fg.name] = members
+        generated_filtered_groups.append(
+            _build_group_obj(fg.name, fg.group_mode, members, fg.test_url, fg.test_interval_sec)
         )
 
-    mg_row_by_name = {row.name: row for row in state.manual_groups}
-    mg_members_map: dict[str, list[ManualGroupMember]] = {}
-    for member in state.manual_members:
-        mg_members_map.setdefault(member.manual_group_id, []).append(member)
-
+    sorted_mg = sorted(source.manual_groups, key=lambda g: g.position)
+    mg_by_name = {mg.name: mg for mg in sorted_mg}
     manual_resolved: dict[str, list[str]] = {}
     resolving: set[str] = set()
 
@@ -442,67 +302,49 @@ async def _run_generation(
             return manual_resolved[name]
         if name in resolving:
             raise GenerationError("manual group dependency cycle detected", 422)
-
-        row = mg_row_by_name.get(name)
-        if row is None:
+        mg = mg_by_name.get(name)
+        if mg is None:
             raise GenerationError(f"manual group not found: {name}", 422)
-
         resolving.add(name)
         members: list[str] = []
-        for member in mg_members_map.get(row.id, []):
+        for member in sorted(mg.members, key=lambda m: m.position):
             if member.member_type == "filtered_group":
                 if member.member_ref not in filtered_group_members:
                     raise GenerationError(
-                        f"manual group {name} references unknown filtered group {member.member_ref}",
-                        422,
+                        f"manual group {name} references unknown filtered group {member.member_ref}", 422
                     )
                 members.append(member.member_ref)
             elif member.member_type == "manual_group":
                 _ = resolve_manual_group(member.member_ref)
                 members.append(member.member_ref)
             else:
-                raise GenerationError(
-                    f"invalid manual group member type: {member.member_type}",
-                    422,
-                )
-
+                raise GenerationError(f"invalid manual group member type: {member.member_type}", 422)
         members = dedupe_keep_order(members)
         if not members:
             raise GenerationError(f"manual group has no members: {name}", 422)
-
         manual_resolved[name] = members
         resolving.remove(name)
         return members
 
     generated_manual_groups: list[ProxyGroupObj] = []
-    for row in state.manual_groups:
-        members = resolve_manual_group(row.name)
+    for mg in sorted_mg:
+        members = resolve_manual_group(mg.name)
         generated_manual_groups.append(
-            _build_group_obj(
-                row.name,
-                row.group_mode,
-                members,
-                row.test_url,
-                row.test_interval_sec,
-            )
+            _build_group_obj(mg.name, mg.group_mode, members, mg.test_url, mg.test_interval_sec)
         )
 
-    group_names_filtered = [row.name for row in state.filtered_groups]
-    group_names_manual = [row.name for row in state.manual_groups]
+    group_names_filtered = [fg.name for fg in sorted_fg]
+    group_names_manual = [mg.name for mg in sorted_mg]
     available_non_shunt_groups = set(group_names_filtered + group_names_manual)
 
     proxy_by_name = {str(p.get("name", "")): p for p in pool_result.proxy_pool}
     matched_dialer_proxy_names: set[str] = set()
-    for rule in state.dialer_rules:
+    for rule in source.dialer_override_rules:
         if rule.dialer_group_name not in available_non_shunt_groups:
-            raise GenerationError(
-                f"dialer group not found: {rule.dialer_group_name}",
-                422,
-            )
+            raise GenerationError(f"dialer group not found: {rule.dialer_group_name}", 422)
         if rule.filtered_group_name not in filtered_group_members:
             raise GenerationError(
-                f"dialer references unknown filtered group: {rule.filtered_group_name}",
-                422,
+                f"dialer references unknown filtered group: {rule.filtered_group_name}", 422
             )
         for proxy_name in filtered_group_members[rule.filtered_group_name]:
             if proxy_name not in matched_dialer_proxy_names:
@@ -514,37 +356,20 @@ async def _run_generation(
     generated_shunt_groups: list[ProxyGroupObj] = []
     rule_providers: dict[str, RuleProviderObj] = {}
     rules: list[str] = []
-
     provider_keys_used: set[str] = set()
+    config_id_for_url = source.config_id or "__UNSAVED__"
 
-    manual_ordered_names = [row.name for row in state.manual_groups]
-    filtered_ordered_names = [row.name for row in state.filtered_groups]
-
-    config_id_for_url = config.id or "__UNSAVED__"
-
-    for idx, binding in enumerate(state.shunt_bindings, start=1):
+    for idx, binding in enumerate(sorted(source.shunt_bindings, key=lambda s: s.position), start=1):
         if binding.default_group_name not in available_non_shunt_groups | {"DIRECT", "REJECT"}:
-            raise GenerationError(
-                f"shunt default group not found: {binding.default_group_name}",
-                422,
-            )
+            raise GenerationError(f"shunt default group not found: {binding.default_group_name}", 422)
 
-        rule_source = state.rule_map.get(binding.rule_source_id)
+        rule_source = rule_map.get(binding.rule_source_id)
         if rule_source is None:
-            raise GenerationError(
-                f"rule source not found for binding {binding.binding_name}",
-                422,
-            )
+            raise GenerationError(f"rule source not found for binding {binding.binding_name}", 422)
         if not rule_source.enabled:
-            raise GenerationError(
-                f"rule source disabled for binding {binding.binding_name}",
-                422,
-            )
+            raise GenerationError(f"rule source disabled for binding {binding.binding_name}", 422)
         if not rule_source.cached_payload_lines_json:
-            raise GenerationError(
-                f"rule source has no cache: {rule_source.name}",
-                409,
-            )
+            raise GenerationError(f"rule source has no cache: {rule_source.name}", 409)
 
         if rule_source.mode == "remote" and rule_source.auto_update and _is_stale(rule_source.next_refresh_at):
             diagnostics.stale_rule_ids.append(rule_source.id)
@@ -552,16 +377,12 @@ async def _run_generation(
 
         shunt_group_members = dedupe_keep_order(
             [binding.default_group_name, "DIRECT"]
-            + manual_ordered_names
-            + filtered_ordered_names
+            + group_names_manual
+            + group_names_filtered
             + ["REJECT"]
         )
         generated_shunt_groups.append(
-            ProxyGroupObj(
-                name=binding.binding_name,
-                type="select",
-                proxies=shunt_group_members,
-            )
+            ProxyGroupObj(name=binding.binding_name, type="select", proxies=shunt_group_members)
         )
 
         key_base = slugify_name(binding.binding_name).replace("-", "_")
@@ -573,12 +394,11 @@ async def _run_generation(
             provider_key = f"{provider_key}_{suffix}"
         provider_keys_used.add(provider_key)
 
-        password = quote_plus(config.password_plain)
+        password = quote_plus(source.password_plain)
         rule_url = (
             f"{settings.public_base_url.rstrip('/')}{settings.api_prefix}/public/"
             f"configs/{config_id_for_url}/rules/{rule_source.id}.yaml?password={password}"
         )
-
         rule_providers[provider_key] = RuleProviderObj(
             type="http",
             behavior=rule_source.behavior,
@@ -594,39 +414,28 @@ async def _run_generation(
         rules.append(line)
 
     final_target: str
-    if config.final_target_type == "group":
-        if not config.final_target_group_name:
+    if source.final_target_type == "group":
+        if not source.final_target_group_name:
             raise GenerationError("final target group is required", 422)
-        if config.final_target_group_name not in available_non_shunt_groups:
-            raise GenerationError(
-                f"final target group not found: {config.final_target_group_name}",
-                422,
-            )
-        final_target = config.final_target_group_name
-    elif config.final_target_type in {"DIRECT", "REJECT"}:
-        final_target = config.final_target_type
+        if source.final_target_group_name not in available_non_shunt_groups:
+            raise GenerationError(f"final target group not found: {source.final_target_group_name}", 422)
+        final_target = source.final_target_group_name
+    elif source.final_target_type in {"DIRECT", "REJECT"}:
+        final_target = source.final_target_type
     else:
         raise GenerationError("invalid final target type", 422)
 
     rules.append(f"MATCH,{final_target}")
 
-    generated_proxy_groups = (
-        generated_filtered_groups + generated_manual_groups + generated_shunt_groups
-    )
-
-    generated_proxy_group_dicts = [
-        g.model_dump(exclude_none=True) for g in generated_proxy_groups
-    ]
+    generated_proxy_groups = generated_filtered_groups + generated_manual_groups + generated_shunt_groups
+    generated_proxy_group_dicts = [g.model_dump(exclude_none=True) for g in generated_proxy_groups]
 
     all_group_names = {group.name for group in generated_proxy_groups}
     referenced_proxy_names: set[str] = set()
     for group in generated_proxy_groups:
         for member in group.proxies:
-            if member in {"DIRECT", "REJECT"}:
-                continue
-            if member in all_group_names:
-                continue
-            referenced_proxy_names.add(member)
+            if member not in {"DIRECT", "REJECT"} and member not in all_group_names:
+                referenced_proxy_names.add(member)
 
     final_proxies: list[dict[str, Any]] = []
     for proxy in pool_result.proxy_pool:
@@ -636,7 +445,7 @@ async def _run_generation(
             final_proxies.append(out)
 
     try:
-        base = yaml.safe_load(config.base_config_yaml)
+        base = yaml.safe_load(source.base_config_yaml)
     except yaml.YAMLError as exc:
         raise GenerationError(f"base config yaml parse failed: {exc}", 422) from exc
 
@@ -647,9 +456,7 @@ async def _run_generation(
 
     base["proxies"] = final_proxies
     base["proxy-groups"] = generated_proxy_group_dicts
-    base["rule-providers"] = {
-        k: v.model_dump() for k, v in rule_providers.items()
-    }
+    base["rule-providers"] = {k: v.model_dump() for k, v in rule_providers.items()}
     base["rules"] = rules
 
     rendered = yaml.safe_dump(base, allow_unicode=True, sort_keys=False)

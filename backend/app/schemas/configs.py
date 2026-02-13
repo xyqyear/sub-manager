@@ -18,6 +18,10 @@ class MainConfigCreate(BaseModel):
     enabled: bool = True
     final_target_type: FinalTargetType = "DIRECT"
     final_target_group_name: str | None = None
+    filtered_groups: list[FilteredGroupPayload] = []
+    manual_groups: list[ManualGroupPayload] = []
+    dialer_override_rules: list[DialerOverridePayload] = []
+    shunt_bindings: list[ShuntBindingPayload] = []
 
 
 class MainConfigUpdate(BaseModel):
@@ -27,6 +31,10 @@ class MainConfigUpdate(BaseModel):
     enabled: bool | None = None
     final_target_type: FinalTargetType | None = None
     final_target_group_name: str | None = None
+    filtered_groups: list[FilteredGroupPayload] | None = None
+    manual_groups: list[ManualGroupPayload] | None = None
+    dialer_override_rules: list[DialerOverridePayload] | None = None
+    shunt_bindings: list[ShuntBindingPayload] | None = None
 
 
 class MainConfigRead(BaseModel):
@@ -39,6 +47,10 @@ class MainConfigRead(BaseModel):
     enabled: bool
     final_target_type: str
     final_target_group_name: str | None
+    filtered_groups: list[FilteredGroupPayload]
+    manual_groups: list[ManualGroupPayload]
+    dialer_override_rules: list[DialerOverridePayload]
+    shunt_bindings: list[ShuntBindingPayload]
     created_at: datetime
     updated_at: datetime
 
@@ -85,13 +97,6 @@ class ShuntBindingPayload(BaseModel):
     rule_source_id: str
     default_group_name: str
     no_resolve: bool = False
-
-
-class BuilderPayload(BaseModel):
-    filtered_groups: list[FilteredGroupPayload]
-    manual_groups: list[ManualGroupPayload]
-    dialer_override_rules: list[DialerOverridePayload]
-    shunt_bindings: list[ShuntBindingPayload]
 
 
 class FilteredGroupPreviewRulePayload(BaseModel):
@@ -142,4 +147,7 @@ class DraftPreviewRequest(BaseModel):
     final_target_type: FinalTargetType = "DIRECT"
     final_target_group_name: str | None = None
     config_id: str | None = None
-    builder: BuilderPayload
+    filtered_groups: list[FilteredGroupPayload] = []
+    manual_groups: list[ManualGroupPayload] = []
+    dialer_override_rules: list[DialerOverridePayload] = []
+    shunt_bindings: list[ShuntBindingPayload] = []
