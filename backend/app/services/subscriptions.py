@@ -71,9 +71,6 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
     await _assert_unique_name(db, payload.name)
 
     mode = payload.mode
-    if mode not in {"remote", "manual"}:
-        raise ServiceError("mode must be remote or manual", 422)
-
     update_interval_sec = _normalize_interval(payload.update_interval_sec)
     now = utc_now()
 

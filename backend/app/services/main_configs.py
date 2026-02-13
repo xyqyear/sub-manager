@@ -17,6 +17,7 @@ from app.schemas.configs import (
     FilteredGroupPreviewItem,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
+    FinalTargetType,
     MainConfigCreate,
     MainConfigUpdate,
 )
@@ -379,12 +380,9 @@ async def preview_filtered_group_matches(
 async def set_final_target(
     db: AsyncSession,
     config: MainConfig,
-    final_target_type: str,
+    final_target_type: FinalTargetType,
     final_target_group_name: str | None,
 ) -> MainConfig:
-    if final_target_type not in {"DIRECT", "REJECT", "group"}:
-        raise ServiceError("final_target_type must be DIRECT, REJECT, or group", 422)
-
     if final_target_type == "group" and not final_target_group_name:
         raise ServiceError("final_target_group_name required when final_target_type=group", 422)
 

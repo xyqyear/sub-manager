@@ -10,7 +10,7 @@ import yaml
 
 from app.config import settings
 from app.models import RuleSource
-from app.schemas.rules import RuleCreate, RuleUpdate
+from app.schemas.rules import RuleBehavior, RuleCreate, RuleUpdate
 from app.services.common import ServiceError, next_refresh_time, utc_now
 
 
@@ -18,10 +18,7 @@ def _normalize_interval(interval_sec: int) -> int:
     return max(settings.min_refresh_interval_sec, min(settings.max_refresh_interval_sec, interval_sec))
 
 
-def validate_rule_payload_lines(behavior: str, lines: list[str]) -> list[str]:
-    if behavior not in {"classical", "domain", "ipcidr"}:
-        raise ServiceError("invalid behavior", 422)
-
+def validate_rule_payload_lines(behavior: RuleBehavior, lines: list[str]) -> list[str]:
     normalized = [line.strip() for line in lines if line.strip()]
     if not normalized:
         raise ServiceError("payload_lines cannot be empty", 422)
@@ -71,12 +68,6 @@ async def _assert_unique_name(db: AsyncSession, name: str, exclude_id: str | Non
 
 async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
     await _assert_unique_name(db, payload.name)
-
-    if payload.mode not in {"remote", "manual"}:
-        raise ServiceError("mode must be remote or manual", 422)
-
-    if payload.behavior not in {"classical", "domain", "ipcidr"}:
-        raise ServiceError("behavior must be classical, domain, or ipcidr", 422)
 
     interval = _normalize_interval(payload.update_interval_sec)
     source = RuleSource(

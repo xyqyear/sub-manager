@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
+
+SourceMode = Literal["remote", "manual"]
 
 
 class SubscriptionCreate(BaseModel):
     name: str
-    mode: str
+    mode: SourceMode
     enabled: bool = True
 
     remote_url: str | None = None
@@ -36,7 +38,7 @@ class SubscriptionRead(BaseModel):
 
     id: str
     name: str
-    mode: str
+    mode: SourceMode
     enabled: bool
 
     remote_url: str | None
@@ -61,12 +63,3 @@ class SubscriptionRefreshResponse(BaseModel):
     id: str
     status: str
     detail: str
-
-
-def validate_subscription_mode(mode: str) -> str:
-    if mode not in {"remote", "manual"}:
-        raise ValueError("mode must be remote or manual")
-    return mode
-
-
-SubscriptionCreate._validate_mode = field_validator("mode")(validate_subscription_mode)
