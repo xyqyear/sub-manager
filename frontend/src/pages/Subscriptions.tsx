@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import yaml from "js-yaml";
 import type { SubscriptionSource } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
+import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
 
 type SubscriptionFormValues = {
@@ -165,13 +166,28 @@ export default function SubscriptionsPage() {
       ),
     },
     {
-      title: "Update",
-      key: "update",
-      render: (_: unknown, row: SubscriptionSource) => (
-        <Typography.Text type="secondary">
-          {row.auto_update ? `${row.update_interval_sec}s` : "manual"}
-        </Typography.Text>
-      ),
+      title: "Last Refresh",
+      key: "last_refresh_at",
+      render: (_: unknown, row: SubscriptionSource) =>
+        row.last_refresh_at ? (
+          <Tooltip title={new Date(row.last_refresh_at).toLocaleString()}>
+            <Typography.Text type="secondary">{formatRelativeTime(row.last_refresh_at)}</Typography.Text>
+          </Tooltip>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        ),
+    },
+    {
+      title: "Next Refresh",
+      key: "next_refresh_at",
+      render: (_: unknown, row: SubscriptionSource) =>
+        row.next_refresh_at ? (
+          <Tooltip title={new Date(row.next_refresh_at).toLocaleString()}>
+            <Typography.Text type="secondary">{formatRelativeTime(row.next_refresh_at)}</Typography.Text>
+          </Tooltip>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        ),
     },
     {
       title: "Traffic",
