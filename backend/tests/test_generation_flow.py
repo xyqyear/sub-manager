@@ -168,3 +168,109 @@ async def test_generation_flow_manual_sources(client, admin_headers):
     )
     assert rule_payload_response.status_code == 200, rule_payload_response.text
     assert "payload:" in rule_payload_response.text
+
+
+@pytest.mark.asyncio
+async def test_copy_nodes_isolates_dialer_override(client, admin_headers):
+    sub = await client.post(
+        "/api/admin/subscriptions",
+        headers=admin_headers,
+        json={
+            "name": "shared-sub",
+            "mode": "manual",
+            "proxy_yaml_object_text": (
+                "- name: shared-node\n  type: socks5\n  server: 1.1.1.1\n  port: 1080\n"
+            ),
+        },
+    )
+    assert sub.status_code == 200, sub.text
+    sub_id = sub.json()["id"]
+
+    rule = await client.post(
+        "/api/admin/rules",
+        headers=admin_headers,
+        json={
+            "name": "dummy-rule",
+            "mode": "manual",
+            "behavior": "domain",
+            "payload_lines": [".example.com"],
+        },
+    )
+    assert rule.status_code == 200, rule.text
+    rule_id = rule.json()["id"]
+
+    config = await client.post(
+        "/api/admin/main-configs",
+        headers=admin_headers,
+        json={
+            "name": "copy-nodes-test",
+            "password_plain": "pw",
+            "base_config_yaml": "mixed-port: 7890\nmode: rule\n",
+            "final_target_type": "DIRECT",
+            "filtered_groups": [
+                {
+                    "name": "Direct",
+                    "position": 1,
+                    "group_mode": "select",
+                    "copy_nodes": False,
+                    "rules": [
+                        {
+                            "subscription_source_id": sub_id,
+                            "regex_pattern": ".*",
+                            "regex_flags": "",
+                            "position": 1,
+                        }
+                    ],
+                },
+                {
+                    "name": "Relay",
+                    "position": 2,
+                    "group_mode": "select",
+                    "copy_nodes": True,
+                    "rules": [
+                        {
+                            "subscription_source_id": sub_id,
+                            "regex_pattern": ".*",
+                            "regex_flags": "",
+                            "position": 1,
+                        }
+                    ],
+                },
+            ],
+            "manual_groups": [],
+            "dialer_override_rules": [
+                {
+                    "filtered_group_name": "Relay",
+                    "dialer_group_name": "Direct",
+                }
+            ],
+            "shunt_bindings": [
+                {
+                    "position": 1,
+                    "binding_name": "Test",
+                    "rule_source_id": rule_id,
+                    "default_group_name": "Direct",
+                    "no_resolve": False,
+                }
+            ],
+        },
+    )
+    assert config.status_code == 200, config.text
+    config_id = config.json()["id"]
+
+    artifact = await client.get(
+        f"/api/public/configs/{config_id}/artifact",
+        params={"password": "pw"},
+    )
+    assert artifact.status_code == 200, artifact.text
+
+    import yaml
+
+    parsed = yaml.safe_load(artifact.text)
+    proxy_names = [p["name"] for p in parsed["proxies"]]
+    assert "shared-node" in proxy_names
+    assert "shared-node [Relay]" in proxy_names
+
+    proxy_map = {p["name"]: p for p in parsed["proxies"]}
+    assert "dialer-proxy" not in proxy_map["shared-node"]
+    assert proxy_map["shared-node [Relay]"]["dialer-proxy"] == "Direct"

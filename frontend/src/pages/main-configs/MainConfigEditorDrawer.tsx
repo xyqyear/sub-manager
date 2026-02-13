@@ -125,6 +125,7 @@ function normalizeGroupFields(values: EditorFormValues, rules: RuleSource[]): Pi
       group_mode: group.group_mode,
       test_url: group.test_url ?? null,
       test_interval_sec: group.test_interval_sec ?? null,
+      copy_nodes: Boolean(group.copy_nodes),
       rules: (group.rules ?? []).map((rule, ruleIndex) => ({
         subscription_source_id: rule.subscription_source_id,
         regex_pattern: rule.regex_pattern,
@@ -505,7 +506,7 @@ export default function MainConfigEditorDrawer({
                       children: (
                         <Space direction="vertical" style={{ display: "flex" }}>
                           <Row gutter={12}>
-                            <Col xs={24} sm={10}>
+                            <Col xs={24} sm={8}>
                               <Form.Item
                                 name={[field.name, "name"]}
                                 label="Group Name"
@@ -514,7 +515,7 @@ export default function MainConfigEditorDrawer({
                                 <Input onBlur={() => void triggerFilteredGroupPreview()} />
                               </Form.Item>
                             </Col>
-                            <Col xs={12} sm={7}>
+                            <Col xs={12} sm={6}>
                               <Form.Item
                                 name={[field.name, "group_mode"]}
                                 label="Mode"
@@ -523,9 +524,14 @@ export default function MainConfigEditorDrawer({
                                 <Select options={groupModeOptions} />
                               </Form.Item>
                             </Col>
-                            <Col xs={12} sm={7}>
+                            <Col xs={12} sm={5}>
                               <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
                                 <InputNumber min={1} style={{ width: "100%" }} />
+                              </Form.Item>
+                            </Col>
+                            <Col xs={12} sm={5}>
+                              <Form.Item name={[field.name, "copy_nodes"]} label="Copy Nodes" valuePropName="checked">
+                                <Switch />
                               </Form.Item>
                             </Col>
                           </Row>
@@ -654,6 +660,7 @@ export default function MainConfigEditorDrawer({
                       group_mode: "select",
                       test_url: "",
                       test_interval_sec: 300,
+                      copy_nodes: false,
                       rules: [],
                     });
                     queueFilteredGroupPreview();

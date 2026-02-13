@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime
 import re
 from typing import Any
@@ -287,6 +288,29 @@ async def generate_config_yaml(
         members = match_filtered_rules_on_proxies(fg_match_rules, pool_result.proxies_by_source)
         if not members:
             raise GenerationError(f"filtered group has no matched proxies: {fg.name}", 422)
+
+        if fg.copy_nodes:
+            used_names = {str(p.get("name", "")) for p in pool_result.proxy_pool}
+            copy_members: list[str] = []
+            proxy_by_name_snapshot = {str(p.get("name", "")): p for p in pool_result.proxy_pool}
+            for original_name in members:
+                original = proxy_by_name_snapshot.get(original_name)
+                if original is None:
+                    continue
+                dup = copy.deepcopy(original)
+                candidate = f"{original_name} [{fg.name}]"
+                if candidate in used_names:
+                    suffix = 2
+                    while f"{candidate}#{suffix}" in used_names:
+                        suffix += 1
+                    candidate = f"{candidate}#{suffix}"
+                dup["name"] = candidate
+                dup["__raw_name"] = candidate
+                used_names.add(candidate)
+                pool_result.proxy_pool.append(dup)
+                copy_members.append(candidate)
+            members = copy_members
+
         filtered_group_members[fg.name] = members
         generated_filtered_groups.append(
             _build_group_obj(fg.name, fg.group_mode, members, fg.test_url, fg.test_interval_sec)

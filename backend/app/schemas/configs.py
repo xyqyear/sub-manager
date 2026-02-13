@@ -69,6 +69,7 @@ class FilteredGroupPayload(BaseModel):
     group_mode: GroupMode
     test_url: str | None = None
     test_interval_sec: int | None = None
+    copy_nodes: bool = False
     rules: list[FilteredGroupRulePayload]
 
 

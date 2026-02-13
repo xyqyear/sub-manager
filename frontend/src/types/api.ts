@@ -54,6 +54,7 @@ export interface MainConfig {
     group_mode: GroupMode;
     test_url?: string | null;
     test_interval_sec?: number | null;
+    copy_nodes?: boolean;
     rules: {
       subscription_source_id: string;
       regex_pattern: string;
