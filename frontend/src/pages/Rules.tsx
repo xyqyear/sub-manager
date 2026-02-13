@@ -64,6 +64,33 @@ export default function RulesPage() {
   const [previewTitle, setPreviewTitle] = useState("");
 
   const mode = Form.useWatch("mode", form);
+  const behavior = Form.useWatch("behavior", form);
+
+  const behaviorPlaceholders: Record<string, string> = {
+    classical: [
+      "DOMAIN-SUFFIX,google.com",
+      "DOMAIN-KEYWORD,google",
+      "DOMAIN,ad.com",
+      "SRC-IP-CIDR,192.168.1.201/32",
+      "IP-CIDR,127.0.0.0/8",
+      "GEOIP,CN",
+      "DST-PORT,80",
+      "SRC-PORT,7777",
+      "IP-CIDR,1.1.1.1/32,no-resolve",
+    ].join("\n"),
+    domain: [
+      ".google.com",
+      "+.youtube.com",
+      "*.github.com",
+      "example.com",
+      "",
+      "Wildcards:",
+      "*  matches one level only (*.a.com -> b.a.com, not c.b.a.com)",
+      "+  matches like DOMAIN-SUFFIX (+.a.com -> b.a.com and c.b.a.com and a.com)",
+      ".  matches subdomains only (.a.com -> b.a.com and c.b.a.com, not a.com)",
+    ].join("\n"),
+    ipcidr: ["192.168.1.0/24", "10.0.0.1/32"].join("\n"),
+  };
 
   const fetchItems = async () => {
     setLoading(true);
@@ -309,7 +336,7 @@ export default function RulesPage() {
             >
               <Input.TextArea
                 rows={10}
-                placeholder="one rule line per row"
+                placeholder={behaviorPlaceholders[behavior] ?? behaviorPlaceholders.classical}
               />
             </Form.Item>
           )}
