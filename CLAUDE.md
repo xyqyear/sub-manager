@@ -334,8 +334,6 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 
 ## Known Gaps / Technical Notes
 
-- `Dashboard.tsx` and `About.tsx` are legacy pages not reachable from current router.
-- Several frontend deps are unused by active pages (`@rjsf/*`, xterm, zustand).
 - No Alembic migrations in use; runtime uses `create_all()`.
 - No Docker files in this repository.
 - Plaintext credentials by design (admin_token, password_plain).
