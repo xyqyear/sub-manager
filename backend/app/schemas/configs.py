@@ -120,22 +120,9 @@ class FilteredGroupPreviewResponse(BaseModel):
     groups: list[FilteredGroupPreviewItem]
 
 
-class PreviewResponse(BaseModel):
-    yaml: str
-    diagnostics: list[str]
-
-
-class PublicArtifactQuery(BaseModel):
-    password: str
-
-
 class AdminHealthResponse(BaseModel):
     status: str
     refresh_loop_running: bool
-
-
-class RulePayloadResponse(BaseModel):
-    yaml: str
 
 
 class GenerationDiagnostics(BaseModel):
@@ -156,11 +143,3 @@ class DraftPreviewRequest(BaseModel):
     final_target_group_name: str | None = None
     config_id: str | None = None
     builder: BuilderPayload
-
-
-class StatusResponse(BaseModel):
-    status: str
-
-
-class PasswordQuery(BaseModel):
-    password: str

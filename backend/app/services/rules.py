@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from ipaddress import ip_network
 
 import httpx
@@ -230,11 +229,3 @@ async def get_due_rule_ids(db: AsyncSession) -> list[str]:
         )
     )
     return [item for item in result.scalars().all()]
-
-
-async def get_rules_by_ids(db: AsyncSession, ids: Iterable[str]) -> list[RuleSource]:
-    ids_list = [i for i in ids]
-    if not ids_list:
-        return []
-    result = await db.execute(select(RuleSource).where(RuleSource.id.in_(ids_list)))
-    return list(result.scalars().all())

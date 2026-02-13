@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 import copy
 from typing import Any
 
@@ -252,13 +251,3 @@ async def get_due_subscription_ids(db: AsyncSession) -> list[str]:
         )
     )
     return [item for item in result.scalars().all()]
-
-
-async def get_subscriptions_by_ids(db: AsyncSession, ids: Iterable[str]) -> list[SubscriptionSource]:
-    ids_list = [i for i in ids]
-    if not ids_list:
-        return []
-    result = await db.execute(
-        select(SubscriptionSource).where(SubscriptionSource.id.in_(ids_list))
-    )
-    return list(result.scalars().all())

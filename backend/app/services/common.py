@@ -5,6 +5,8 @@ from datetime import UTC, datetime, timedelta
 import random
 import re
 
+from fastapi import HTTPException
+
 
 @dataclass
 class ServiceError(Exception):
@@ -53,3 +55,18 @@ def parse_subscription_userinfo(raw: str | None) -> dict[str, int] | None:
 def slugify_name(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return slug or "source"
+
+
+def dedupe_keep_order(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        out.append(value)
+        seen.add(value)
+    return out
+
+
+def to_http_error(exc: ServiceError | GenerationError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=exc.message)

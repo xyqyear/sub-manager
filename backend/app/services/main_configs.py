@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
-from app.config import settings
 from app.models import (
     MainConfig,
     RuleSource,
@@ -17,11 +16,10 @@ from app.schemas.configs import (
     FilteredGroupPreviewItem,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
-    FinalTargetType,
     MainConfigCreate,
     MainConfigUpdate,
 )
-from app.services.common import ServiceError
+from app.services.common import ServiceError, dedupe_keep_order
 from app.services.generator import (
     FilteredRuleMatch,
     OrderedSource,
@@ -57,17 +55,6 @@ def _normalize_position(value: int | None, fallback: int) -> int:
     if value is None:
         return fallback
     return value
-
-
-def _dedupe_keep_order(values: list[str]) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        if value in seen:
-            continue
-        output.append(value)
-        seen.add(value)
-    return output
 
 
 async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> MainConfig:
@@ -370,42 +357,8 @@ async def preview_filtered_group_matches(
             FilteredGroupPreviewItem(
                 name=group_name,
                 matched_proxy_names=matched_proxy_names,
-                issues=_dedupe_keep_order(issues),
+                issues=dedupe_keep_order(issues),
             )
         )
 
     return FilteredGroupPreviewResponse(groups=preview_items)
-
-
-async def set_final_target(
-    db: AsyncSession,
-    config: MainConfig,
-    final_target_type: FinalTargetType,
-    final_target_group_name: str | None,
-) -> MainConfig:
-    if final_target_type == "group" and not final_target_group_name:
-        raise ServiceError("final_target_group_name required when final_target_type=group", 422)
-
-    if final_target_type != "group":
-        final_target_group_name = None
-
-    config.final_target_type = final_target_type
-    config.final_target_group_name = final_target_group_name
-
-    db.add(config)
-    await db.commit()
-    await db.refresh(config)
-    return config
-
-
-async def validate_final_target_exists(db: AsyncSession, config: MainConfig) -> None:
-    if config.final_target_type != "group":
-        return
-
-    assert config.final_target_group_name is not None
-    names = {fg.name for fg in config.filtered_groups} | {mg.name for mg in config.manual_groups}
-    if config.final_target_group_name not in names:
-        raise ServiceError(
-            f"final target group not found: {config.final_target_group_name}",
-            422,
-        )

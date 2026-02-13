@@ -17,7 +17,7 @@ from app.models import (
     SubscriptionSource,
 )
 from app.schemas.configs import BuilderPayload
-from app.services.common import GenerationError, slugify_name, utc_now
+from app.services.common import GenerationError, dedupe_keep_order, slugify_name, utc_now
 from app.services.refresh_loop import refresh_loop_manager
 
 
@@ -154,17 +154,6 @@ def _build_group_obj(
     return group
 
 
-def _dedupe_keep_order(values: list[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        if value in seen:
-            continue
-        out.append(value)
-        seen.add(value)
-    return out
-
-
 def build_proxy_pool_with_collision_names(
     ordered_sources: list[OrderedSource],
 ) -> ProxyPoolResult:
@@ -232,7 +221,7 @@ def match_filtered_rules_on_proxies(
             if pattern.search(name) or pattern.search(raw_name):
                 matched_names.append(name)
 
-    return _dedupe_keep_order(matched_names)
+    return dedupe_keep_order(matched_names)
 
 
 async def _load_builder_state(db: AsyncSession, payload: BuilderPayload) -> BuilderState:
@@ -477,7 +466,7 @@ async def _run_generation(
                     422,
                 )
 
-        members = _dedupe_keep_order(members)
+        members = dedupe_keep_order(members)
         if not members:
             raise GenerationError(f"manual group has no members: {name}", 422)
 
@@ -561,7 +550,7 @@ async def _run_generation(
             diagnostics.stale_rule_ids.append(rule_source.id)
             await refresh_loop_manager.enqueue_rule_refresh(rule_source.id)
 
-        shunt_group_members = _dedupe_keep_order(
+        shunt_group_members = dedupe_keep_order(
             [binding.default_group_name, "DIRECT"]
             + manual_ordered_names
             + filtered_ordered_names

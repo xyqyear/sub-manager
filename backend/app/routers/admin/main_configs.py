@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_token
@@ -16,7 +16,7 @@ from app.schemas.configs import (
     MainConfigUpdate,
     PreviewWithDiagnosticsResponse,
 )
-from app.services.common import GenerationError, ServiceError
+from app.services.common import GenerationError, ServiceError, to_http_error
 from app.services.generator import generate_config_yaml, generate_config_yaml_from_draft
 from app.services.main_configs import (
     create_main_config,
@@ -38,15 +38,6 @@ router = APIRouter(
     dependencies=[Depends(require_admin_token)],
 )
 
-
-def _to_http_error(exc: ServiceError) -> HTTPException:
-    return HTTPException(status_code=exc.status_code, detail=exc.message)
-
-
-def _to_gen_http_error(exc: GenerationError) -> HTTPException:
-    return HTTPException(status_code=exc.status_code, detail=exc.message)
-
-
 @router.get("", response_model=list[MainConfigRead])
 async def get_main_configs(db: AsyncSession = Depends(get_db)) -> list[MainConfigRead]:
     rows = await list_main_configs(db)
@@ -62,7 +53,7 @@ async def create_main_config_endpoint(
         row = await create_main_config(db, payload)
         return MainConfigRead.model_validate(row)
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.post(
@@ -76,7 +67,7 @@ async def preview_filtered_groups_endpoint(
     try:
         return await preview_filtered_group_matches(db, payload)
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.post("/preview-draft", response_model=PreviewWithDiagnosticsResponse)
@@ -101,9 +92,9 @@ async def preview_draft_endpoint(
             ),
         )
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
     except GenerationError as exc:
-        raise _to_gen_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.put("/{config_id}", response_model=MainConfigRead)
@@ -117,7 +108,7 @@ async def update_main_config_endpoint(
         row = await update_main_config(db, row, payload)
         return MainConfigRead.model_validate(row)
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.delete("/{config_id}")
@@ -130,7 +121,7 @@ async def delete_main_config_endpoint(
         await delete_main_config(db, row)
         return {"status": "ok"}
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.get("/{config_id}/builder", response_model=BuilderPayload)
@@ -141,7 +132,7 @@ async def get_builder_endpoint(
     try:
         return await get_builder(db, config_id)
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.put("/{config_id}/builder", response_model=BuilderPayload)
@@ -154,7 +145,7 @@ async def put_builder_endpoint(
         _ = await get_main_config_or_404(db, config_id)
         return await replace_builder(db, config_id, payload)
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.post("/{config_id}/preview", response_model=PreviewWithDiagnosticsResponse)
@@ -177,6 +168,6 @@ async def preview_config_endpoint(
             ),
         )
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
     except GenerationError as exc:
-        raise _to_gen_http_error(exc)
+        raise to_http_error(exc)

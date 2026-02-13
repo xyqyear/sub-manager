@@ -139,7 +139,6 @@ backend/
       main_configs.py              # config CRUD + builder replace + validation
       generator.py                 # YAML assembly engine
       refresh_loop.py              # in-process async background refresh
-    repositories/                  # exists but currently unused by services
   tests/
     conftest.py                    # test DB isolation (/tmp/sub_manager_test.sqlite3)
     test_admin_auth.py
@@ -328,7 +327,6 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 
 ## Known Gaps / Technical Notes
 
-- `repositories/` layer exists but is unused; services query SQLAlchemy directly.
 - `Dashboard.tsx` and `About.tsx` are legacy pages not reachable from current router.
 - Several frontend deps are unused by active pages (`@rjsf/*`, xterm, zustand).
 - No Alembic migrations in use; runtime uses `create_all()`.

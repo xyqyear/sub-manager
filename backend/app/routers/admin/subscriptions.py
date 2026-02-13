@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_token
@@ -11,7 +11,7 @@ from app.schemas.subscriptions import (
     SubscriptionRefreshResponse,
     SubscriptionUpdate,
 )
-from app.services.common import ServiceError
+from app.services.common import ServiceError, to_http_error
 from app.services.refresh_loop import refresh_loop_manager
 from app.services.subscriptions import (
     create_subscription,
@@ -28,11 +28,6 @@ router = APIRouter(
     dependencies=[Depends(require_admin_token)],
 )
 
-
-def _to_http_error(exc: ServiceError) -> HTTPException:
-    return HTTPException(status_code=exc.status_code, detail=exc.message)
-
-
 @router.get("", response_model=list[SubscriptionRead])
 async def get_subscriptions(db: AsyncSession = Depends(get_db)) -> list[SubscriptionRead]:
     rows = await list_subscriptions(db)
@@ -48,7 +43,7 @@ async def create_subscription_endpoint(
         row = await create_subscription(db, payload)
         return SubscriptionRead.model_validate(row)
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.put("/{subscription_id}", response_model=SubscriptionRead)
@@ -62,7 +57,7 @@ async def update_subscription_endpoint(
         source = await update_subscription(db, source, payload)
         return SubscriptionRead.model_validate(source)
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.post("/{subscription_id}/refresh", response_model=SubscriptionRefreshResponse)
@@ -83,7 +78,7 @@ async def refresh_subscription_endpoint(
             detail=source.last_error or "ok",
         )
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.post("/{subscription_id}/refresh-async", response_model=SubscriptionRefreshResponse)
@@ -100,7 +95,7 @@ async def refresh_subscription_async_endpoint(
             detail="refresh queued",
         )
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
 
 
 @router.delete("/{subscription_id}")
@@ -113,4 +108,4 @@ async def delete_subscription_endpoint(
         await delete_subscription(db, source)
         return {"status": "ok"}
     except ServiceError as exc:
-        raise _to_http_error(exc)
+        raise to_http_error(exc)
