@@ -5,6 +5,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Progress,
   Select,
   Space,
   Switch,
@@ -19,6 +20,7 @@ import { useEffect, useState } from "react";
 import yaml from "js-yaml";
 import type { SubscriptionSource } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
+import { formatBytes, TRAFFIC_COLORS } from "@/utils/format";
 import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
 
@@ -192,11 +194,41 @@ export default function SubscriptionsPage() {
     {
       title: "Traffic",
       key: "traffic",
-      render: (_: unknown, row: SubscriptionSource) => (
-        <Typography.Text type="secondary">
-          {row.subscription_userinfo_raw ?? "-"}
-        </Typography.Text>
-      ),
+      width: 280,
+      render: (_: unknown, row: SubscriptionSource) => {
+        const info = row.subscription_userinfo_json;
+        if (!info || !info.total) return <Typography.Text type="secondary">-</Typography.Text>;
+
+        const upload = info.upload ?? 0;
+        const download = info.download ?? 0;
+        const total = info.total;
+        const uploadPct = Math.min((upload / total) * 100, 100);
+        const totalUsedPct = Math.min(((upload + download) / total) * 100, 100);
+
+        return (
+          <div>
+            <Progress
+              percent={totalUsedPct}
+              success={{ percent: uploadPct, strokeColor: TRAFFIC_COLORS.upload }}
+              strokeColor={TRAFFIC_COLORS.download}
+              showInfo={false}
+              size={[undefined as unknown as number, 8]}
+            />
+            <div style={{ fontSize: 12, lineHeight: "18px" }}>
+              <span style={{ color: TRAFFIC_COLORS.upload }}>U: {formatBytes(upload)}</span>
+              {" / "}
+              <span style={{ color: TRAFFIC_COLORS.download }}>D: {formatBytes(download)}</span>
+              {" / "}
+              <span>{formatBytes(total)}</span>
+            </div>
+            {info.expire ? (
+              <div style={{ fontSize: 12, color: "#888" }}>
+                Exp: {new Date(info.expire * 1000).toLocaleDateString("sv-SE")}
+              </div>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       title: "Actions",
