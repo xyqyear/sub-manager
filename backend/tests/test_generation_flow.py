@@ -12,7 +12,7 @@ async def test_filtered_group_preview_endpoint_uses_backend_logic(client, admin_
             "name": "sub-1",
             "mode": "manual",
             "proxy_yaml_object_text": (
-                "name: hk-node\ntype: socks5\nserver: 1.1.1.1\nport: 1080\n"
+                "- name: hk-node\n  type: socks5\n  server: 1.1.1.1\n  port: 1080\n"
             ),
         },
     )
@@ -26,7 +26,7 @@ async def test_filtered_group_preview_endpoint_uses_backend_logic(client, admin_
             "name": "Sub 2",
             "mode": "manual",
             "proxy_yaml_object_text": (
-                "name: hk-node\ntype: socks5\nserver: 2.2.2.2\nport: 1081\n"
+                "- name: hk-node\n  type: socks5\n  server: 2.2.2.2\n  port: 1081\n"
             ),
         },
     )
@@ -76,7 +76,7 @@ async def test_generation_flow_manual_sources(client, admin_headers):
         json={
             "name": "sub-1",
             "mode": "manual",
-            "proxy_yaml_object_text": "name: node-a\ntype: socks5\nserver: 1.1.1.1\nport: 1080\n",
+            "proxy_yaml_object_text": "- name: node-a\n  type: socks5\n  server: 1.1.1.1\n  port: 1080\n",
         },
     )
     assert sub_response.status_code == 200, sub_response.text

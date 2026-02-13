@@ -18,20 +18,21 @@ def _normalize_interval(interval_sec: int) -> int:
     return max(settings.min_refresh_interval_sec, min(settings.max_refresh_interval_sec, interval_sec))
 
 
-def _validate_manual_proxy_text(proxy_yaml_object_text: str | None) -> dict[str, Any]:
+def _validate_manual_proxy_text(proxy_yaml_object_text: str | None) -> list[dict[str, Any]]:
     if not proxy_yaml_object_text:
         raise ServiceError("manual mode requires proxy_yaml_object_text", 422)
 
     try:
         parsed = yaml.safe_load(proxy_yaml_object_text)
     except yaml.YAMLError as exc:
-        raise ServiceError(f"invalid proxy yaml object: {exc}", 422) from exc
+        raise ServiceError(f"invalid proxy yaml: {exc}", 422) from exc
 
-    if not isinstance(parsed, dict):
-        raise ServiceError("manual proxy must be a single YAML object", 422)
+    if not isinstance(parsed, list):
+        raise ServiceError("manual proxy must be a YAML list of proxy objects", 422)
 
-    if not parsed:
-        raise ServiceError("manual proxy object cannot be empty", 422)
+    for i, item in enumerate(parsed):
+        if not isinstance(item, dict) or not item:
+            raise ServiceError(f"manual proxy list item {i} must be a non-empty object", 422)
 
     return parsed
 
@@ -89,10 +90,10 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
             raise ServiceError("remote mode requires remote_url", 422)
         source.next_refresh_at = next_refresh_time(update_interval_sec) if payload.auto_update else None
     else:
-        proxy_obj = _validate_manual_proxy_text(payload.proxy_yaml_object_text)
-        source.cached_proxies_json = [proxy_obj]
+        proxy_list = _validate_manual_proxy_text(payload.proxy_yaml_object_text)
+        source.cached_proxies_json = proxy_list
         source.cached_raw_yaml = yaml.safe_dump(
-            {"proxies": [proxy_obj]},
+            {"proxies": proxy_list},
             allow_unicode=True,
             sort_keys=False,
         )
@@ -133,10 +134,10 @@ async def update_subscription(
             source.next_refresh_at = None
     else:
         if payload.proxy_yaml_object_text is not None:
-            proxy_obj = _validate_manual_proxy_text(payload.proxy_yaml_object_text)
-            source.cached_proxies_json = [proxy_obj]
+            proxy_list = _validate_manual_proxy_text(payload.proxy_yaml_object_text)
+            source.cached_proxies_json = proxy_list
             source.cached_raw_yaml = yaml.safe_dump(
-                {"proxies": [proxy_obj]},
+                {"proxies": proxy_list},
                 allow_unicode=True,
                 sort_keys=False,
             )
@@ -214,7 +215,7 @@ async def refresh_remote_subscription(db: AsyncSession, source: SubscriptionSour
         db.add(source)
         await db.commit()
         await db.refresh(source)
-        raise ServiceError(source.last_error, 502) from exc
+        raise ServiceError(source.last_error or "subscription refresh failed", 502) from exc
 
     db.add(source)
     await db.commit()

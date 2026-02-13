@@ -40,7 +40,7 @@ const defaultFormValues: SubscriptionFormValues = {
   remote_auth_header: "",
   auto_update: false,
   update_interval_sec: 3600,
-  proxy_yaml_object_text: "name: node-1\ntype: socks5\nserver: 1.1.1.1\nport: 1080\n",
+  proxy_yaml_object_text: "",
 };
 
 export default function SubscriptionsPage() {
@@ -279,10 +279,10 @@ export default function SubscriptionsPage() {
           ) : (
             <Form.Item
               name="proxy_yaml_object_text"
-              label="Proxy YAML Object"
+              label="Proxy YAML List"
               rules={[{ required: true, message: "proxy_yaml_object_text is required" }]}
             >
-              <Input.TextArea rows={10} />
+              <Input.TextArea rows={10} placeholder={"- name: node-1\n  type: socks5\n  server: 1.1.1.1\n  port: 1080"} />
             </Form.Item>
           )}
         </Form>
