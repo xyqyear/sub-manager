@@ -30,7 +30,7 @@ import type {
   RuleSource,
   SubscriptionSource,
 } from "@/types/api";
-import api from "@/utils/api";
+import api, { errorDetail } from "@/utils/api";
 
 type FinalTargetType = "DIRECT" | "REJECT" | "group";
 type ManualMemberType = "filtered_group" | "manual_group";
@@ -73,18 +73,6 @@ const groupModeOptions: { label: string; value: GroupMode }[] = [
   { label: "fallback", value: "fallback" },
   { label: "url-test", value: "url-test" },
 ];
-
-function errorDetail(error: unknown): string {
-  const response = (error as { response?: { data?: { detail?: unknown } } })?.response;
-  const detail = response?.data?.detail;
-  if (typeof detail === "string" && detail.trim()) {
-    return detail;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
 
 type MoveControlsProps = {
   index: number;
@@ -379,7 +367,7 @@ export default function MainConfigEditorDrawer({
       await onSaved();
       onClose();
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     } finally {
       setSaving(false);
     }

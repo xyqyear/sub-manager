@@ -19,7 +19,7 @@ import type {
   RuleSource,
   SubscriptionSource,
 } from "@/types/api";
-import api from "@/utils/api";
+import api, { errorDetail } from "@/utils/api";
 
 export default function MainConfigsPage() {
   const [items, setItems] = useState<MainConfig[]>([]);
@@ -46,7 +46,7 @@ export default function MainConfigsPage() {
       setSubscriptions(subscriptionsResponse.data);
       setRules(rulesResponse.data);
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     } finally {
       setLoading(false);
     }
@@ -77,7 +77,7 @@ export default function MainConfigsPage() {
       void message.success("Main config deleted");
       await fetchAll();
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 
@@ -88,7 +88,7 @@ export default function MainConfigsPage() {
       setPreviewDiagnostics(response.data.diagnostics);
       setPreviewOpen(true);
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 

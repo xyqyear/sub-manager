@@ -18,7 +18,7 @@ import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlin
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
 import type { RuleSource } from "@/types/api";
-import api from "@/utils/api";
+import api, { errorDetail } from "@/utils/api";
 import { downloadTextFile } from "@/utils/download";
 
 type RuleFormValues = {
@@ -98,7 +98,7 @@ export default function RulesPage() {
       const response = await api.get<RuleSource[]>("/admin/rules");
       setItems(response.data);
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     } finally {
       setLoading(false);
     }
@@ -135,7 +135,7 @@ export default function RulesPage() {
       void message.success("Deleted");
       await fetchItems();
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 
@@ -145,7 +145,7 @@ export default function RulesPage() {
       void message.success("Refreshed");
       await fetchItems();
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 
@@ -191,7 +191,7 @@ export default function RulesPage() {
       await fetchItems();
       void message.success(editing ? "Updated" : "Created");
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 

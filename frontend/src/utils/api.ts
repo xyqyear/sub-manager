@@ -27,4 +27,17 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export function errorDetail(error: unknown): string {
+  const response = (error as { response?: { data?: { detail?: unknown } } })
+    ?.response;
+  const detail = response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
 export default api;

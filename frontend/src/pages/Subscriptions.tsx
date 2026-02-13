@@ -18,7 +18,7 @@ import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlin
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
 import type { SubscriptionSource } from "@/types/api";
-import api from "@/utils/api";
+import api, { errorDetail } from "@/utils/api";
 import { downloadTextFile } from "@/utils/download";
 
 type SubscriptionFormValues = {
@@ -61,7 +61,7 @@ export default function SubscriptionsPage() {
       const response = await api.get<SubscriptionSource[]>("/admin/subscriptions");
       setItems(response.data);
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     } finally {
       setLoading(false);
     }
@@ -98,7 +98,7 @@ export default function SubscriptionsPage() {
       void message.success("Deleted");
       await fetchItems();
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 
@@ -108,7 +108,7 @@ export default function SubscriptionsPage() {
       void message.success("Refreshed");
       await fetchItems();
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 
@@ -140,7 +140,7 @@ export default function SubscriptionsPage() {
       await fetchItems();
       void message.success(editing ? "Updated" : "Created");
     } catch (error) {
-      void message.error(String(error));
+      void message.error(errorDetail(error));
     }
   };
 

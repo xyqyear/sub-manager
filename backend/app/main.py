@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
@@ -47,6 +48,17 @@ api_app.include_router(admin_subscriptions_router)
 api_app.include_router(admin_rules_router)
 api_app.include_router(admin_main_configs_router)
 api_app.include_router(public_configs_router)
+
+logger = logging.getLogger(__name__)
+
+
+@api_app.exception_handler(Exception)
+async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {exc}"},
+    )
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.mount(settings.api_prefix, api_app)
