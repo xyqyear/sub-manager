@@ -14,10 +14,12 @@ import {
   Typography,
   message,
 } from "antd";
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import yaml from "js-yaml";
 import type { RuleSource } from "@/types/api";
 import api from "@/utils/api";
+import { downloadTextFile } from "@/utils/download";
 
 type RuleFormValues = {
   name: string;
@@ -57,6 +59,9 @@ export default function RulesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RuleSource | null>(null);
   const [form] = Form.useForm<RuleFormValues>();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewContent, setPreviewContent] = useState("");
+  const [previewTitle, setPreviewTitle] = useState("");
 
   const mode = Form.useWatch("mode", form);
 
@@ -115,6 +120,22 @@ export default function RulesPage() {
     } catch (error) {
       void message.error(String(error));
     }
+  };
+
+  const hasCachedPayload = (item: RuleSource) =>
+    item.cached_payload_lines_json != null && item.cached_payload_lines_json.length > 0;
+
+  const payloadToText = (item: RuleSource) =>
+    yaml.dump({ payload: item.cached_payload_lines_json }, { lineWidth: -1 });
+
+  const openPreview = (item: RuleSource) => {
+    setPreviewContent(payloadToText(item));
+    setPreviewTitle(`${item.name} — Rules`);
+    setPreviewOpen(true);
+  };
+
+  const handleDownload = (item: RuleSource) => {
+    downloadTextFile(payloadToText(item), `${item.name}_rules.yaml`, "application/x-yaml");
   };
 
   const handleSubmit = async () => {
@@ -192,6 +213,12 @@ export default function RulesPage() {
           </Tooltip>
           <Tooltip title="Refresh">
             <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(row)} />
+          </Tooltip>
+          <Tooltip title="Preview">
+            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedPayload(row)} onClick={() => openPreview(row)} />
+          </Tooltip>
+          <Tooltip title="Download">
+            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedPayload(row)} onClick={() => handleDownload(row)} />
           </Tooltip>
           <Popconfirm title="Delete rule?" onConfirm={() => void handleDelete(row)}>
             <Tooltip title="Delete">
@@ -287,6 +314,22 @@ export default function RulesPage() {
             </Form.Item>
           )}
         </Form>
+      </Modal>
+
+      <Modal
+        title={previewTitle}
+        open={previewOpen}
+        onCancel={() => setPreviewOpen(false)}
+        footer={null}
+        width={800}
+        destroyOnHidden
+      >
+        <Input.TextArea
+          value={previewContent}
+          readOnly
+          autoSize={{ minRows: 10, maxRows: 30 }}
+          style={{ fontFamily: "monospace" }}
+        />
       </Modal>
     </Space>
   );

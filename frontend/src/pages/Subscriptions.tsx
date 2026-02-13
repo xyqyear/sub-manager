@@ -14,10 +14,12 @@ import {
   Typography,
   message,
 } from "antd";
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import yaml from "js-yaml";
 import type { SubscriptionSource } from "@/types/api";
 import api from "@/utils/api";
+import { downloadTextFile } from "@/utils/download";
 
 type SubscriptionFormValues = {
   name: string;
@@ -47,6 +49,9 @@ export default function SubscriptionsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SubscriptionSource | null>(null);
   const [form] = Form.useForm<SubscriptionFormValues>();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewContent, setPreviewContent] = useState("");
+  const [previewTitle, setPreviewTitle] = useState("");
 
   const mode = Form.useWatch("mode", form);
 
@@ -105,6 +110,22 @@ export default function SubscriptionsPage() {
     } catch (error) {
       void message.error(String(error));
     }
+  };
+
+  const hasCachedProxies = (item: SubscriptionSource) =>
+    item.cached_proxies_json != null && item.cached_proxies_json.length > 0;
+
+  const proxiesToYaml = (item: SubscriptionSource) =>
+    yaml.dump(item.cached_proxies_json, { lineWidth: -1 });
+
+  const openPreview = (item: SubscriptionSource) => {
+    setPreviewContent(proxiesToYaml(item));
+    setPreviewTitle(`${item.name} — Proxies`);
+    setPreviewOpen(true);
+  };
+
+  const handleDownload = (item: SubscriptionSource) => {
+    downloadTextFile(proxiesToYaml(item), `${item.name}_proxies.yaml`, "application/x-yaml");
   };
 
   const handleSubmit = async () => {
@@ -171,6 +192,12 @@ export default function SubscriptionsPage() {
           </Tooltip>
           <Tooltip title="Refresh">
             <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(row)} />
+          </Tooltip>
+          <Tooltip title="Preview">
+            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedProxies(row)} onClick={() => openPreview(row)} />
+          </Tooltip>
+          <Tooltip title="Download">
+            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedProxies(row)} onClick={() => handleDownload(row)} />
           </Tooltip>
           <Popconfirm
             title="Delete subscription?"
@@ -259,6 +286,22 @@ export default function SubscriptionsPage() {
             </Form.Item>
           )}
         </Form>
+      </Modal>
+
+      <Modal
+        title={previewTitle}
+        open={previewOpen}
+        onCancel={() => setPreviewOpen(false)}
+        footer={null}
+        width={800}
+        destroyOnHidden
+      >
+        <Input.TextArea
+          value={previewContent}
+          readOnly
+          autoSize={{ minRows: 10, maxRows: 30 }}
+          style={{ fontFamily: "monospace" }}
+        />
       </Modal>
     </Space>
   );

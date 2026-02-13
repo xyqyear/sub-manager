@@ -21,6 +21,7 @@
     "@xterm/xterm": "^5.5.0",
     "antd": "^6.3.0",
     "axios": "^1.13.5",
+    "js-yaml": "^4.1.1",
     "monaco-editor": "^0.52.2",
     "monaco-yaml": "^5.4.0",
     "react": "^19.2.0",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@eslint/create-config": "^1.11.0",
     "@eslint/js": "^9.39.1",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
