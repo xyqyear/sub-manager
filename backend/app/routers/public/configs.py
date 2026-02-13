@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.models import MainConfig, RuleSource, ShuntBinding
+from app.models import MainConfig, RuleSource
 from app.services.common import GenerationError
 from app.services.generator import generate_config_yaml, render_rule_source_yaml
 from app.services.refresh_loop import refresh_loop_manager
@@ -60,13 +59,7 @@ async def get_rule_payload(
     config = await _get_config_or_404(db, config_id)
     _check_password(config, password)
 
-    binding_result = await db.execute(
-        select(ShuntBinding.id).where(
-            ShuntBinding.main_config_id == config.id,
-            ShuntBinding.rule_source_id == rule_source_id,
-        )
-    )
-    if binding_result.scalars().first() is None:
+    if not any(b.rule_source_id == rule_source_id for b in config.shunt_bindings):
         raise HTTPException(status_code=404, detail="Rule source is not linked to config")
 
     rule_source = await db.get(RuleSource, rule_source_id)

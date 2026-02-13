@@ -94,13 +94,6 @@ class BuilderPayload(BaseModel):
     shunt_bindings: list[ShuntBindingPayload]
 
 
-class BuilderRead(BaseModel):
-    filtered_groups: list[FilteredGroupPayload]
-    manual_groups: list[ManualGroupPayload]
-    dialer_override_rules: list[DialerOverridePayload]
-    shunt_bindings: list[ShuntBindingPayload]
-
-
 class FilteredGroupPreviewRulePayload(BaseModel):
     subscription_source_id: str | None = None
     regex_pattern: str | None = None

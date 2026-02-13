@@ -14,14 +14,8 @@ from app.config import settings
 from app.db.database import AsyncSessionLocal, engine, init_db
 from app.main import app
 from app.models import (
-    DialerOverrideRule,
-    FilteredGroup,
-    FilteredGroupRule,
     MainConfig,
-    ManualGroup,
-    ManualGroupMember,
     RuleSource,
-    ShuntBinding,
     SubscriptionSource,
 )
 
@@ -54,12 +48,6 @@ async def admin_headers() -> dict[str, str]:
 @pytest.fixture(autouse=True)
 async def clean_db() -> None:
     async with AsyncSessionLocal() as db:
-        await db.execute(delete(FilteredGroupRule))
-        await db.execute(delete(FilteredGroup))
-        await db.execute(delete(ManualGroupMember))
-        await db.execute(delete(ManualGroup))
-        await db.execute(delete(DialerOverrideRule))
-        await db.execute(delete(ShuntBinding))
         await db.execute(delete(MainConfig))
         await db.execute(delete(RuleSource))
         await db.execute(delete(SubscriptionSource))

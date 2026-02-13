@@ -47,7 +47,7 @@ backend/
     schemas/                       # pydantic request/response models
       subscriptions.py
       rules.py
-      configs.py                   # BuilderPayload, PreviewWithDiagnosticsResponse, etc.
+      configs.py                   # BuilderPayload, PreviewWithDiagnosticsResponse, DraftPreviewRequest, etc.
     services/                      # business logic
       common.py                    # ServiceError, GenerationError, jitter, slugify, parsing
       subscriptions.py             # subscription CRUD + remote fetch + cache
@@ -107,37 +107,35 @@ A main config combines subscriptions + rules into a final output. Each config ha
 - `base_config_yaml`: base Clash settings (ports, DNS, TUN, etc.)
 - `password_plain`: per-config access password for public endpoints
 - `final_target_type`: DIRECT / REJECT / group (for the trailing MATCH rule)
-- A **builder graph** stored across multiple relation tables:
+- A **builder graph** stored as 4 JSON columns directly on `main_config`, using a `PydanticListType` TypeDecorator that serializes/deserializes via Pydantic `TypeAdapter`:
 
-#### Builder Tables
+| Column                 | Pydantic Type              | Purpose                                    |
+|------------------------|----------------------------|--------------------------------------------|
+| `filtered_groups`      | `list[FilteredGroupPayload]` | Named proxy groups filtered by regex (each contains nested rules) |
+| `manual_groups`        | `list[ManualGroupPayload]`   | Named groups referencing filtered/manual groups (each contains nested members) |
+| `dialer_override_rules`| `list[DialerOverridePayload]`| Assigns `dialer-proxy` to proxies in a filtered group |
+| `shunt_bindings`       | `list[ShuntBindingPayload]`  | Binds a rule source to a shunt proxy-group |
 
-| Table                            | Purpose                                    |
-|----------------------------------|--------------------------------------------|
-| `filtered_group`                 | Named proxy group filtered by regex        |
-| `filtered_group_rule`            | Per-group regex rules against subscription sources |
-| `manual_group`                   | Named group referencing filtered/manual groups |
-| `manual_group_member`            | Members: `filtered_group` or `manual_group` |
-| `dialer_override_rule`           | Assigns `dialer-proxy` to proxies in a filtered group |
-| `shunt_binding`                  | Binds a rule source to a shunt proxy-group |
-
-All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps. Lists are ordered by `position` field.
+All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps. Lists are ordered by `position` field within the JSON arrays.
 
 ## Config Generation Engine (`services/generator.py`)
 
-The generation pipeline:
+The generation pipeline (single code path for both saved configs and draft previews):
 
-1. **Load subscriptions** - Derive subscription IDs from filtered group rules (first-seen order). Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
-2. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
-3. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
-4. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
-5. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
-6. **Shunt groups + rule-providers** - Each binding generates:
+1. **Build `BuilderPayload`** - From `MainConfig` JSON columns (saved) or from `DraftPreviewRequest` (draft).
+2. **Load builder state** - `_load_builder_state()` converts `BuilderPayload` into internal `BuilderState`, fetching referenced `SubscriptionSource` and `RuleSource` rows from DB.
+3. **Load subscriptions** - Derive subscription IDs from filtered group rules (first-seen order). Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
+4. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
+5. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
+6. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
+7. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
+8. **Shunt groups + rule-providers** - Each binding generates:
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
    - A `rule-providers` entry pointing to `{public_base_url}/api/public/configs/{id}/rules/{rule_id}.yaml?password=...`
    - A `RULE-SET,{provider_key},{binding_name}` rules line
-7. **Final MATCH** - Appended last: `MATCH,{final_target}`
-8. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
-9. **Merge** - Generated sections replace `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
+9. **Final MATCH** - Appended last: `MATCH,{final_target}`
+10. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
+11. **Merge** - Generated sections replace `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
 
 Proxy group order in output: filtered_groups -> manual_groups -> shunt_groups.
 
@@ -169,7 +167,8 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 | GET    | `/api/admin/main-configs/{id}/builder`                | Get builder state           |
 | PUT    | `/api/admin/main-configs/{id}/builder`                | Replace builder (full swap) |
 | POST   | `/api/admin/main-configs/{id}/preview`                | Preview generated YAML      |
-| POST   | `/api/admin/main-configs/{id}/filtered-group-preview` | Preview filtered group matches |
+| POST   | `/api/admin/main-configs/filtered-groups/preview`     | Preview filtered group matches |
+| POST   | `/api/admin/main-configs/preview-draft`               | Preview uncommitted builder changes |
 
 ### Public
 
@@ -182,11 +181,21 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 
 ```python
 # Builder payload (PUT /api/admin/main-configs/{id}/builder)
+# Also used as the response type for GET builder and as JSON columns on MainConfig
 BuilderPayload:
   filtered_groups: [{name, position, group_mode, test_url?, test_interval_sec?, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
   manual_groups: [{name, position, group_mode, test_url?, test_interval_sec?, members: [{member_type, member_ref, position}]}]
-  dialer_override_rules: [{filtered_group_name, dialer_group_name, position}]
+  dialer_override_rules: [{filtered_group_name, dialer_group_name}]
   shunt_bindings: [{position, binding_name, rule_source_id, default_group_name, no_resolve}]
+
+# Draft preview (POST /api/admin/main-configs/preview-draft)
+DraftPreviewRequest:
+  base_config_yaml: str
+  password_plain: str
+  final_target_type: FinalTargetType
+  final_target_group_name: str | None
+  config_id: str | None
+  builder: BuilderPayload
 
 # Preview response
 PreviewWithDiagnosticsResponse:

@@ -4,18 +4,46 @@ from datetime import datetime
 from typing import Any
 import uuid
 
+from pydantic import TypeAdapter
 from sqlalchemy import (
     Boolean,
     DateTime,
-    ForeignKey,
     Integer,
     JSON,
     String,
     Text,
-    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
+
+from app.schemas.configs import (
+    DialerOverridePayload,
+    FilteredGroupPayload,
+    ManualGroupPayload,
+    ShuntBindingPayload,
+)
+
+
+class PydanticListType(TypeDecorator):
+    impl = Text
+    cache_ok = True
+
+    def __init__(self, model_type: type, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._adapter = TypeAdapter(list[model_type])  # type: ignore[valid-type]
+
+    def process_bind_param(self, value: Any, dialect: Any) -> str | None:
+        if value is None:
+            return "[]"
+        return self._adapter.dump_json(value).decode()
+
+    def process_result_value(self, value: Any, dialect: Any) -> list[Any]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return self._adapter.validate_json(value)
+        return self._adapter.validate_python(value)
 
 
 class Base(DeclarativeBase):
@@ -116,140 +144,15 @@ class MainConfig(Base, TimestampMixin):
     )  # DIRECT|REJECT|group
     final_target_group_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-
-class FilteredGroup(Base, TimestampMixin):
-    __tablename__ = "filtered_group"
-    __table_args__ = (
-        UniqueConstraint("main_config_id", "name", name="uq_cfg_filtered_group_name"),
+    filtered_groups: Mapped[list[FilteredGroupPayload]] = mapped_column(
+        PydanticListType(FilteredGroupPayload), default=list, nullable=False
     )
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
+    manual_groups: Mapped[list[ManualGroupPayload]] = mapped_column(
+        PydanticListType(ManualGroupPayload), default=list, nullable=False
     )
-    main_config_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("main_config.id", ondelete="CASCADE"),
-        nullable=False,
+    dialer_override_rules: Mapped[list[DialerOverridePayload]] = mapped_column(
+        PydanticListType(DialerOverridePayload), default=list, nullable=False
     )
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
-    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    group_mode: Mapped[str] = mapped_column(String(16), default="select", nullable=False)
-    test_url: Mapped[str] = mapped_column(Text, nullable=False)
-    test_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False)
-
-
-class FilteredGroupRule(Base, TimestampMixin):
-    __tablename__ = "filtered_group_rule"
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
+    shunt_bindings: Mapped[list[ShuntBindingPayload]] = mapped_column(
+        PydanticListType(ShuntBindingPayload), default=list, nullable=False
     )
-    filtered_group_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("filtered_group.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    subscription_source_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("subscription_source.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    regex_pattern: Mapped[str] = mapped_column(Text, nullable=False)
-    regex_flags: Mapped[str] = mapped_column(String(32), default="", nullable=False)
-    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
-class ManualGroup(Base, TimestampMixin):
-    __tablename__ = "manual_group"
-    __table_args__ = (
-        UniqueConstraint("main_config_id", "name", name="uq_cfg_manual_group_name"),
-    )
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
-    )
-    main_config_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("main_config.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
-    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    group_mode: Mapped[str] = mapped_column(String(16), default="select", nullable=False)
-    test_url: Mapped[str] = mapped_column(Text, nullable=False)
-    test_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False)
-
-
-class ManualGroupMember(Base, TimestampMixin):
-    __tablename__ = "manual_group_member"
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
-    )
-    manual_group_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("manual_group.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    member_type: Mapped[str] = mapped_column(
-        String(32),
-        nullable=False,
-    )  # filtered_group|manual_group
-    member_ref: Mapped[str] = mapped_column(Text, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
-class DialerOverrideRule(Base, TimestampMixin):
-    __tablename__ = "dialer_override_rule"
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
-    )
-    main_config_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("main_config.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    filtered_group_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    dialer_group_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
-class ShuntBinding(Base, TimestampMixin):
-    __tablename__ = "shunt_binding"
-    __table_args__ = (
-        UniqueConstraint("main_config_id", "binding_name", name="uq_cfg_shunt_name"),
-    )
-
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
-    )
-    main_config_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("main_config.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    binding_name: Mapped[str] = mapped_column(String(128), nullable=False)
-
-    rule_source_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("rule_source.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    default_group_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    no_resolve: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -7,7 +7,6 @@ from app.auth import require_admin_token
 from app.db.database import get_db
 from app.schemas.configs import (
     BuilderPayload,
-    BuilderRead,
     DraftPreviewRequest,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
@@ -137,24 +136,23 @@ async def delete_main_config_endpoint(
         raise _to_http_error(exc)
 
 
-@router.get("/{config_id}/builder", response_model=BuilderRead)
+@router.get("/{config_id}/builder", response_model=BuilderPayload)
 async def get_builder_endpoint(
     config_id: str,
     db: AsyncSession = Depends(get_db),
-) -> BuilderRead:
+) -> BuilderPayload:
     try:
-        _ = await get_main_config_or_404(db, config_id)
         return await get_builder(db, config_id)
     except ServiceError as exc:
         raise _to_http_error(exc)
 
 
-@router.put("/{config_id}/builder", response_model=BuilderRead)
+@router.put("/{config_id}/builder", response_model=BuilderPayload)
 async def put_builder_endpoint(
     config_id: str,
     payload: BuilderPayload,
     db: AsyncSession = Depends(get_db),
-) -> BuilderRead:
+) -> BuilderPayload:
     try:
         _ = await get_main_config_or_404(db, config_id)
         return await replace_builder(db, config_id, payload)

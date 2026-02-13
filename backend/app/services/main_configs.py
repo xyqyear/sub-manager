@@ -1,41 +1,24 @@
 from __future__ import annotations
 
-from collections import defaultdict
 import re
-from typing import cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
 from app.config import settings
 from app.models import (
-    DialerOverrideRule,
-    FilteredGroup,
-    FilteredGroupRule,
     MainConfig,
-    ManualGroup,
-    ManualGroupMember,
     RuleSource,
-    ShuntBinding,
     SubscriptionSource,
 )
 from app.schemas.configs import (
     BuilderPayload,
-    BuilderRead,
-    DialerOverridePayload,
     FilteredGroupPreviewItem,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
-    FilteredGroupPayload,
-    FilteredGroupRulePayload,
-    GroupMode,
     MainConfigCreate,
     MainConfigUpdate,
-    ManualGroupMemberPayload,
-    ManualGroupPayload,
-    MemberType,
-    ShuntBindingPayload,
 )
 from app.services.common import ServiceError
 from app.services.generator import (
@@ -199,7 +182,7 @@ def validate_builder_shapes(payload: BuilderPayload) -> None:
                     422,
                 ) from exc
 
-    deps: dict[str, set[str]] = defaultdict(set)
+    deps: dict[str, set[str]] = {}
     for group in payload.manual_groups:
         for member in group.members:
             if member.member_type == "filtered_group":
@@ -214,7 +197,7 @@ def validate_builder_shapes(payload: BuilderPayload) -> None:
                         f"manual group {group.name} references unknown manual group {member.member_ref}",
                         422,
                     )
-                deps[group.name].add(member.member_ref)
+                deps.setdefault(group.name, set()).add(member.member_ref)
             else:
                 raise ServiceError(
                     f"invalid member_type {member.member_type}",
@@ -258,203 +241,36 @@ def validate_builder_shapes(payload: BuilderPayload) -> None:
             )
 
 
-async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
-    fg_result = await db.execute(
-        select(FilteredGroup).where(FilteredGroup.main_config_id == config_id).order_by(FilteredGroup.position.asc())
-    )
-    fg_rows = list(fg_result.scalars().all())
-    fg_ids = [item.id for item in fg_rows]
-
-    fg_rules_map: dict[str, list[FilteredGroupRulePayload]] = defaultdict(list)
-    if fg_ids:
-        fg_rule_result = await db.execute(
-            select(FilteredGroupRule).where(FilteredGroupRule.filtered_group_id.in_(fg_ids)).order_by(FilteredGroupRule.position.asc())
-        )
-        for rule in fg_rule_result.scalars().all():
-            fg_rules_map[rule.filtered_group_id].append(
-                FilteredGroupRulePayload(
-                    subscription_source_id=rule.subscription_source_id,
-                    regex_pattern=rule.regex_pattern,
-                    regex_flags=rule.regex_flags,
-                    position=rule.position,
-                )
-            )
-
-    filtered_groups = [
-        FilteredGroupPayload(
-            name=item.name,
-            position=item.position,
-            group_mode=cast(GroupMode, item.group_mode),
-            test_url=item.test_url,
-            test_interval_sec=item.test_interval_sec,
-            rules=fg_rules_map.get(item.id, []),
-        )
-        for item in fg_rows
-    ]
-
-    mg_result = await db.execute(
-        select(ManualGroup).where(ManualGroup.main_config_id == config_id).order_by(ManualGroup.position.asc())
-    )
-    mg_rows = list(mg_result.scalars().all())
-    mg_ids = [item.id for item in mg_rows]
-
-    mg_members_map: dict[str, list[ManualGroupMemberPayload]] = defaultdict(list)
-    if mg_ids:
-        mg_member_result = await db.execute(
-            select(ManualGroupMember).where(ManualGroupMember.manual_group_id.in_(mg_ids)).order_by(ManualGroupMember.position.asc())
-        )
-        for member in mg_member_result.scalars().all():
-            mg_members_map[member.manual_group_id].append(
-                ManualGroupMemberPayload(
-                    member_type=cast(MemberType, member.member_type),
-                    member_ref=member.member_ref,
-                    position=member.position,
-                )
-            )
-
-    manual_groups = [
-        ManualGroupPayload(
-            name=item.name,
-            position=item.position,
-            group_mode=cast(GroupMode, item.group_mode),
-            test_url=item.test_url,
-            test_interval_sec=item.test_interval_sec,
-            members=mg_members_map.get(item.id, []),
-        )
-        for item in mg_rows
-    ]
-
-    dor_result = await db.execute(
-        select(DialerOverrideRule).where(DialerOverrideRule.main_config_id == config_id).order_by(DialerOverrideRule.position.asc())
-    )
-    dialer_override_rules = [
-        DialerOverridePayload(
-            filtered_group_name=item.filtered_group_name,
-            dialer_group_name=item.dialer_group_name,
-        )
-        for item in dor_result.scalars().all()
-    ]
-
-    shunt_result = await db.execute(
-        select(ShuntBinding).where(ShuntBinding.main_config_id == config_id).order_by(ShuntBinding.position.asc())
-    )
-    shunt_bindings = [
-        ShuntBindingPayload(
-            position=item.position,
-            binding_name=item.binding_name,
-            rule_source_id=item.rule_source_id,
-            default_group_name=item.default_group_name,
-            no_resolve=item.no_resolve,
-        )
-        for item in shunt_result.scalars().all()
-    ]
-
-    return BuilderRead(
-        filtered_groups=filtered_groups,
-        manual_groups=manual_groups,
-        dialer_override_rules=dialer_override_rules,
-        shunt_bindings=shunt_bindings,
+async def get_builder(db: AsyncSession, config_id: str) -> BuilderPayload:
+    config = await get_main_config_or_404(db, config_id)
+    return BuilderPayload(
+        filtered_groups=config.filtered_groups,
+        manual_groups=config.manual_groups,
+        dialer_override_rules=config.dialer_override_rules,
+        shunt_bindings=config.shunt_bindings,
     )
 
 
-async def replace_builder(db: AsyncSession, config_id: str, payload: BuilderPayload) -> BuilderRead:
+async def replace_builder(db: AsyncSession, config_id: str, payload: BuilderPayload) -> BuilderPayload:
     await validate_builder_refs(db, payload)
     validate_builder_shapes(payload)
 
-    fg_result = await db.execute(
-        select(FilteredGroup).where(FilteredGroup.main_config_id == config_id)
-    )
-    old_fg_ids = [item.id for item in fg_result.scalars().all()]
-    if old_fg_ids:
-        await db.execute(delete(FilteredGroupRule).where(FilteredGroupRule.filtered_group_id.in_(old_fg_ids)))
-    await db.execute(delete(FilteredGroup).where(FilteredGroup.main_config_id == config_id))
+    config = await get_main_config_or_404(db, config_id)
+    config.filtered_groups = payload.filtered_groups
+    config.manual_groups = payload.manual_groups
+    config.dialer_override_rules = payload.dialer_override_rules
+    config.shunt_bindings = payload.shunt_bindings
 
-    mg_result = await db.execute(
-        select(ManualGroup).where(ManualGroup.main_config_id == config_id)
-    )
-    old_mg_ids = [item.id for item in mg_result.scalars().all()]
-    if old_mg_ids:
-        await db.execute(delete(ManualGroupMember).where(ManualGroupMember.manual_group_id.in_(old_mg_ids)))
-    await db.execute(delete(ManualGroup).where(ManualGroup.main_config_id == config_id))
-
-    await db.execute(
-        delete(DialerOverrideRule).where(DialerOverrideRule.main_config_id == config_id)
-    )
-    await db.execute(delete(ShuntBinding).where(ShuntBinding.main_config_id == config_id))
-
-    fg_name_to_id: dict[str, str] = {}
-    for group in payload.filtered_groups:
-        row = FilteredGroup(
-            main_config_id=config_id,
-            name=group.name,
-            position=group.position,
-            group_mode=group.group_mode,
-            test_url=group.test_url or settings.default_test_url,
-            test_interval_sec=group.test_interval_sec or settings.default_test_interval,
-        )
-        db.add(row)
-        await db.flush()
-        fg_name_to_id[group.name] = row.id
-
-        for rule in group.rules:
-            db.add(
-                FilteredGroupRule(
-                    filtered_group_id=row.id,
-                    subscription_source_id=rule.subscription_source_id,
-                    regex_pattern=rule.regex_pattern,
-                    regex_flags=rule.regex_flags,
-                    position=rule.position,
-                )
-            )
-
-    mg_name_to_id: dict[str, str] = {}
-    for group in payload.manual_groups:
-        row = ManualGroup(
-            main_config_id=config_id,
-            name=group.name,
-            position=group.position,
-            group_mode=group.group_mode,
-            test_url=group.test_url or settings.default_test_url,
-            test_interval_sec=group.test_interval_sec or settings.default_test_interval,
-        )
-        db.add(row)
-        await db.flush()
-        mg_name_to_id[group.name] = row.id
-
-        for member in group.members:
-            db.add(
-                ManualGroupMember(
-                    manual_group_id=row.id,
-                    member_type=member.member_type,
-                    member_ref=member.member_ref,
-                    position=member.position,
-                )
-            )
-
-    for index, rule in enumerate(payload.dialer_override_rules, start=1):
-        db.add(
-            DialerOverrideRule(
-                main_config_id=config_id,
-                filtered_group_name=rule.filtered_group_name,
-                dialer_group_name=rule.dialer_group_name,
-                position=index,
-            )
-        )
-
-    for binding in payload.shunt_bindings:
-        db.add(
-            ShuntBinding(
-                main_config_id=config_id,
-                position=binding.position,
-                binding_name=binding.binding_name,
-                rule_source_id=binding.rule_source_id,
-                default_group_name=binding.default_group_name,
-                no_resolve=binding.no_resolve,
-            )
-        )
-
+    db.add(config)
     await db.commit()
-    return await get_builder(db, config_id)
+    await db.refresh(config)
+
+    return BuilderPayload(
+        filtered_groups=config.filtered_groups,
+        manual_groups=config.manual_groups,
+        dialer_override_rules=config.dialer_override_rules,
+        shunt_bindings=config.shunt_bindings,
+    )
 
 
 async def preview_filtered_group_matches(
@@ -589,14 +405,7 @@ async def validate_final_target_exists(db: AsyncSession, config: MainConfig) -> 
         return
 
     assert config.final_target_group_name is not None
-    result = await db.execute(
-        select(FilteredGroup.name)
-        .where(FilteredGroup.main_config_id == config.id)
-        .union(
-            select(ManualGroup.name).where(ManualGroup.main_config_id == config.id)
-        )
-    )
-    names = set(result.scalars().all())
+    names = {fg.name for fg in config.filtered_groups} | {mg.name for mg in config.manual_groups}
     if config.final_target_group_name not in names:
         raise ServiceError(
             f"final target group not found: {config.final_target_group_name}",

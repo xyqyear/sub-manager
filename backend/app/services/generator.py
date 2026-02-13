@@ -12,14 +12,8 @@ import yaml
 
 from app.config import settings
 from app.models import (
-    DialerOverrideRule as ORMDialerOverrideRule,
-    FilteredGroup as ORMFilteredGroup,
-    FilteredGroupRule as ORMFilteredGroupRule,
     MainConfig,
-    ManualGroup as ORMManualGroup,
-    ManualGroupMember as ORMManualGroupMember,
     RuleSource,
-    ShuntBinding as ORMShuntBinding,
     SubscriptionSource,
 )
 from app.schemas.configs import BuilderPayload
@@ -240,31 +234,14 @@ def match_filtered_rules_on_proxies(
     return _dedupe_keep_order(matched_names)
 
 
-async def _load_builder_state(db: AsyncSession, config_id: str) -> BuilderState:
-    fg_result = await db.execute(
-        select(ORMFilteredGroup)
-        .where(ORMFilteredGroup.main_config_id == config_id)
-        .order_by(ORMFilteredGroup.position.asc())
-    )
-    orm_filtered_groups = list(fg_result.scalars().all())
-    fg_ids = [item.id for item in orm_filtered_groups]
-
-    orm_fg_rules: list[ORMFilteredGroupRule] = []
-    if fg_ids:
-        fg_rule_result = await db.execute(
-            select(ORMFilteredGroupRule)
-            .where(ORMFilteredGroupRule.filtered_group_id.in_(fg_ids))
-            .order_by(ORMFilteredGroupRule.position.asc())
-        )
-        orm_fg_rules = list(fg_rule_result.scalars().all())
-
+async def _load_builder_state(db: AsyncSession, payload: BuilderPayload) -> BuilderState:
     sub_ids_ordered: list[str] = []
     seen_sub_ids: set[str] = set()
-    fg_id_order = {fg.id: idx for idx, fg in enumerate(orm_filtered_groups)}
-    for rule in sorted(orm_fg_rules, key=lambda r: (fg_id_order.get(r.filtered_group_id, 0), r.position)):
-        if rule.subscription_source_id not in seen_sub_ids:
-            sub_ids_ordered.append(rule.subscription_source_id)
-            seen_sub_ids.add(rule.subscription_source_id)
+    for group in payload.filtered_groups:
+        for rule in sorted(group.rules, key=lambda r: r.position):
+            if rule.subscription_source_id not in seen_sub_ids:
+                sub_ids_ordered.append(rule.subscription_source_id)
+                seen_sub_ids.add(rule.subscription_source_id)
 
     subscriptions: list[SubscriptionSource] = []
     if sub_ids_ordered:
@@ -274,104 +251,80 @@ async def _load_builder_state(db: AsyncSession, config_id: str) -> BuilderState:
         subscriptions = list(sub_result.scalars().all())
     sub_map = {item.id: item for item in subscriptions}
 
-    mg_result = await db.execute(
-        select(ORMManualGroup)
-        .where(ORMManualGroup.main_config_id == config_id)
-        .order_by(ORMManualGroup.position.asc())
-    )
-    orm_manual_groups = list(mg_result.scalars().all())
-    mg_ids = [item.id for item in orm_manual_groups]
+    filtered_groups: list[FilteredGroup] = []
+    all_fg_rules: list[FilteredGroupRule] = []
+    for i, fg in enumerate(sorted(payload.filtered_groups, key=lambda g: g.position)):
+        fg_id = f"fg-{i}"
+        filtered_groups.append(FilteredGroup(
+            id=fg_id,
+            name=fg.name,
+            group_mode=fg.group_mode,
+            test_url=fg.test_url,
+            test_interval_sec=fg.test_interval_sec,
+        ))
+        for rule in sorted(fg.rules, key=lambda r: r.position):
+            all_fg_rules.append(FilteredGroupRule(
+                filtered_group_id=fg_id,
+                subscription_source_id=rule.subscription_source_id,
+                regex_pattern=rule.regex_pattern,
+                regex_flags=rule.regex_flags,
+                position=rule.position,
+            ))
 
-    orm_mg_members: list[ORMManualGroupMember] = []
-    if mg_ids:
-        mg_member_result = await db.execute(
-            select(ORMManualGroupMember)
-            .where(ORMManualGroupMember.manual_group_id.in_(mg_ids))
-            .order_by(ORMManualGroupMember.position.asc())
-        )
-        orm_mg_members = list(mg_member_result.scalars().all())
+    manual_groups: list[ManualGroup] = []
+    all_mg_members: list[ManualGroupMember] = []
+    for i, mg in enumerate(sorted(payload.manual_groups, key=lambda g: g.position)):
+        mg_id = f"mg-{i}"
+        manual_groups.append(ManualGroup(
+            id=mg_id,
+            name=mg.name,
+            group_mode=mg.group_mode,
+            test_url=mg.test_url,
+            test_interval_sec=mg.test_interval_sec,
+        ))
+        for member in sorted(mg.members, key=lambda m: m.position):
+            all_mg_members.append(ManualGroupMember(
+                manual_group_id=mg_id,
+                member_type=member.member_type,
+                member_ref=member.member_ref,
+                position=member.position,
+            ))
 
-    dialer_result = await db.execute(
-        select(ORMDialerOverrideRule)
-        .where(ORMDialerOverrideRule.main_config_id == config_id)
-        .order_by(ORMDialerOverrideRule.position.asc())
-    )
-    orm_dialer_rules = list(dialer_result.scalars().all())
+    dialer_rules: list[DialerOverrideRule] = []
+    for i, d in enumerate(payload.dialer_override_rules):
+        dialer_rules.append(DialerOverrideRule(
+            filtered_group_name=d.filtered_group_name,
+            dialer_group_name=d.dialer_group_name,
+            position=i + 1,
+        ))
 
-    shunt_result = await db.execute(
-        select(ORMShuntBinding)
-        .where(ORMShuntBinding.main_config_id == config_id)
-        .order_by(ORMShuntBinding.position.asc())
-    )
-    orm_shunt_bindings = list(shunt_result.scalars().all())
-    rule_ids = [item.rule_source_id for item in orm_shunt_bindings]
+    shunt_bindings: list[ShuntBinding] = []
+    rule_ids: list[str] = []
+    for sb in sorted(payload.shunt_bindings, key=lambda s: s.position):
+        shunt_bindings.append(ShuntBinding(
+            binding_name=sb.binding_name,
+            rule_source_id=sb.rule_source_id,
+            default_group_name=sb.default_group_name,
+            no_resolve=sb.no_resolve,
+            position=sb.position,
+        ))
+        rule_ids.append(sb.rule_source_id)
 
-    rules: list[RuleSource] = []
+    orm_rules: list[RuleSource] = []
     if rule_ids:
         rules_result = await db.execute(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
-        rules = list(rules_result.scalars().all())
-    rule_map = {item.id: item for item in rules}
+        orm_rules = list(rules_result.scalars().all())
+    rule_map = {item.id: item for item in orm_rules}
 
     return BuilderState(
         sub_ids_ordered=sub_ids_ordered,
         sub_map=sub_map,
-        filtered_groups=[
-            FilteredGroup(
-                id=fg.id,
-                name=fg.name,
-                group_mode=fg.group_mode,
-                test_url=fg.test_url,
-                test_interval_sec=fg.test_interval_sec,
-            )
-            for fg in orm_filtered_groups
-        ],
-        filtered_rules=[
-            FilteredGroupRule(
-                filtered_group_id=r.filtered_group_id,
-                subscription_source_id=r.subscription_source_id,
-                regex_pattern=r.regex_pattern,
-                regex_flags=r.regex_flags,
-                position=r.position,
-            )
-            for r in orm_fg_rules
-        ],
-        manual_groups=[
-            ManualGroup(
-                id=mg.id,
-                name=mg.name,
-                group_mode=mg.group_mode,
-                test_url=mg.test_url,
-                test_interval_sec=mg.test_interval_sec,
-            )
-            for mg in orm_manual_groups
-        ],
-        manual_members=[
-            ManualGroupMember(
-                manual_group_id=m.manual_group_id,
-                member_type=m.member_type,
-                member_ref=m.member_ref,
-                position=m.position,
-            )
-            for m in orm_mg_members
-        ],
-        dialer_rules=[
-            DialerOverrideRule(
-                filtered_group_name=d.filtered_group_name,
-                dialer_group_name=d.dialer_group_name,
-                position=d.position,
-            )
-            for d in orm_dialer_rules
-        ],
-        shunt_bindings=[
-            ShuntBinding(
-                binding_name=sb.binding_name,
-                rule_source_id=sb.rule_source_id,
-                default_group_name=sb.default_group_name,
-                no_resolve=sb.no_resolve,
-                position=sb.position,
-            )
-            for sb in orm_shunt_bindings
-        ],
+        filtered_groups=filtered_groups,
+        filtered_rules=all_fg_rules,
+        manual_groups=manual_groups,
+        manual_members=all_mg_members,
+        dialer_rules=dialer_rules,
+        shunt_bindings=shunt_bindings,
         rule_map=rule_map,
     )
 
@@ -382,13 +335,36 @@ async def generate_config_yaml(
     enqueue_subscription_refresh,
     enqueue_rule_refresh,
 ) -> GenerationResult:
-    state = await _load_builder_state(db, config.id)
+    payload = BuilderPayload(
+        filtered_groups=config.filtered_groups,
+        manual_groups=config.manual_groups,
+        dialer_override_rules=config.dialer_override_rules,
+        shunt_bindings=config.shunt_bindings,
+    )
+    state = await _load_builder_state(db, payload)
     fields = ConfigFields(
         id=config.id,
         password_plain=config.password_plain,
         base_config_yaml=config.base_config_yaml,
         final_target_type=config.final_target_type,
         final_target_group_name=config.final_target_group_name,
+    )
+    return await _run_generation(state, fields, enqueue_subscription_refresh, enqueue_rule_refresh)
+
+
+async def generate_config_yaml_from_draft(
+    db: AsyncSession,
+    payload,
+    enqueue_subscription_refresh,
+    enqueue_rule_refresh,
+) -> GenerationResult:
+    state = await _load_builder_state(db, payload.builder)
+    fields = ConfigFields(
+        id=payload.config_id,
+        password_plain=payload.password_plain,
+        base_config_yaml=payload.base_config_yaml,
+        final_target_type=payload.final_target_type,
+        final_target_group_name=payload.final_target_group_name,
     )
     return await _run_generation(state, fields, enqueue_subscription_refresh, enqueue_rule_refresh)
 
@@ -694,118 +670,6 @@ async def _run_generation(
 
     rendered = yaml.safe_dump(base, allow_unicode=True, sort_keys=False)
     return GenerationResult(yaml=rendered, diagnostics=diagnostics)
-
-
-async def _load_builder_state_from_payload(db: AsyncSession, payload: BuilderPayload) -> BuilderState:
-    sub_ids_ordered: list[str] = []
-    seen_sub_ids: set[str] = set()
-    for group in payload.filtered_groups:
-        for rule in sorted(group.rules, key=lambda r: r.position):
-            if rule.subscription_source_id not in seen_sub_ids:
-                sub_ids_ordered.append(rule.subscription_source_id)
-                seen_sub_ids.add(rule.subscription_source_id)
-
-    subscriptions: list[SubscriptionSource] = []
-    if sub_ids_ordered:
-        sub_result = await db.execute(
-            select(SubscriptionSource).where(SubscriptionSource.id.in_(sub_ids_ordered))
-        )
-        subscriptions = list(sub_result.scalars().all())
-    sub_map = {item.id: item for item in subscriptions}
-
-    filtered_groups: list[FilteredGroup] = []
-    all_fg_rules: list[FilteredGroupRule] = []
-    for i, fg in enumerate(sorted(payload.filtered_groups, key=lambda g: g.position)):
-        fg_id = f"draft-fg-{i}"
-        filtered_groups.append(FilteredGroup(
-            id=fg_id,
-            name=fg.name,
-            group_mode=fg.group_mode,
-            test_url=fg.test_url,
-            test_interval_sec=fg.test_interval_sec,
-        ))
-        for rule in sorted(fg.rules, key=lambda r: r.position):
-            all_fg_rules.append(FilteredGroupRule(
-                filtered_group_id=fg_id,
-                subscription_source_id=rule.subscription_source_id,
-                regex_pattern=rule.regex_pattern,
-                regex_flags=rule.regex_flags,
-                position=rule.position,
-            ))
-
-    manual_groups: list[ManualGroup] = []
-    all_mg_members: list[ManualGroupMember] = []
-    for i, mg in enumerate(sorted(payload.manual_groups, key=lambda g: g.position)):
-        mg_id = f"draft-mg-{i}"
-        manual_groups.append(ManualGroup(
-            id=mg_id,
-            name=mg.name,
-            group_mode=mg.group_mode,
-            test_url=mg.test_url,
-            test_interval_sec=mg.test_interval_sec,
-        ))
-        for member in sorted(mg.members, key=lambda m: m.position):
-            all_mg_members.append(ManualGroupMember(
-                manual_group_id=mg_id,
-                member_type=member.member_type,
-                member_ref=member.member_ref,
-                position=member.position,
-            ))
-
-    dialer_rules: list[DialerOverrideRule] = []
-    for i, d in enumerate(payload.dialer_override_rules):
-        dialer_rules.append(DialerOverrideRule(
-            filtered_group_name=d.filtered_group_name,
-            dialer_group_name=d.dialer_group_name,
-            position=i + 1,
-        ))
-
-    shunt_bindings: list[ShuntBinding] = []
-    rule_ids: list[str] = []
-    for sb in sorted(payload.shunt_bindings, key=lambda s: s.position):
-        shunt_bindings.append(ShuntBinding(
-            binding_name=sb.binding_name,
-            rule_source_id=sb.rule_source_id,
-            default_group_name=sb.default_group_name,
-            no_resolve=sb.no_resolve,
-            position=sb.position,
-        ))
-        rule_ids.append(sb.rule_source_id)
-
-    orm_rules: list[RuleSource] = []
-    if rule_ids:
-        rules_result = await db.execute(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
-        orm_rules = list(rules_result.scalars().all())
-    rule_map = {item.id: item for item in orm_rules}
-
-    return BuilderState(
-        sub_ids_ordered=sub_ids_ordered,
-        sub_map=sub_map,
-        filtered_groups=filtered_groups,
-        filtered_rules=all_fg_rules,
-        manual_groups=manual_groups,
-        manual_members=all_mg_members,
-        dialer_rules=dialer_rules,
-        shunt_bindings=shunt_bindings,
-        rule_map=rule_map,
-    )
-
-
-async def generate_config_yaml_from_draft(
-    db: AsyncSession,
-    payload,
-    enqueue_subscription_refresh,
-    enqueue_rule_refresh,
-) -> GenerationResult:
-    state = await _load_builder_state_from_payload(db, payload.builder)
-    fields = ConfigFields(
-        id=payload.config_id,
-        password_plain=payload.password_plain,
-        base_config_yaml=payload.base_config_yaml,
-        final_target_type=payload.final_target_type,
-        final_target_group_name=payload.final_target_group_name,
-    )
-    return await _run_generation(state, fields, enqueue_subscription_refresh, enqueue_rule_refresh)
 
 
 async def render_rule_source_yaml(rule_source: RuleSource) -> str:
