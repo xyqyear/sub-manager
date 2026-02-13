@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from app.schemas.common import UtcDatetime
 
 SourceMode = Literal["remote", "manual"]
 
@@ -46,8 +47,8 @@ class SubscriptionRead(BaseModel):
 
     auto_update: bool
     update_interval_sec: int
-    next_refresh_at: datetime | None
-    last_refresh_at: datetime | None
+    next_refresh_at: UtcDatetime | None
+    last_refresh_at: UtcDatetime | None
 
     last_status: str
     last_error: str | None
@@ -55,8 +56,8 @@ class SubscriptionRead(BaseModel):
     subscription_userinfo_json: dict[str, int] | None
 
     cached_proxies_json: list[dict[str, Any]] | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class SubscriptionRefreshResponse(BaseModel):

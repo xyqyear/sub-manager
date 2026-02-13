@@ -12,7 +12,6 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
-    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -23,6 +22,7 @@ from app.schemas.configs import (
     ManualGroupPayload,
     ShuntBindingPayload,
 )
+from app.services.common import utc_now
 
 
 class PydanticListType(TypeDecorator):
@@ -53,13 +53,13 @@ class Base(DeclarativeBase):
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
+        default=utc_now,
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False,
     )
 

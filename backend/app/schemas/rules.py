@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from app.schemas.common import UtcDatetime
 
 SourceMode = Literal["remote", "manual"]
 RuleBehavior = Literal["classical", "domain", "ipcidr"]
@@ -46,15 +47,15 @@ class RuleRead(BaseModel):
     remote_url: str | None
     auto_update: bool
     update_interval_sec: int
-    next_refresh_at: datetime | None
-    last_refresh_at: datetime | None
+    next_refresh_at: UtcDatetime | None
+    last_refresh_at: UtcDatetime | None
 
     last_status: str
     last_error: str | None
     cached_payload_lines_json: list[str] | None
 
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class RuleRefreshResponse(BaseModel):

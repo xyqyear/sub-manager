@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from app.schemas.common import UtcDatetime
 
 
 FinalTargetType = Literal["DIRECT", "REJECT", "group"]
@@ -51,8 +52,8 @@ class MainConfigRead(BaseModel):
     manual_groups: list[ManualGroupPayload]
     dialer_override_rules: list[DialerOverridePayload]
     shunt_bindings: list[ShuntBindingPayload]
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class FilteredGroupRulePayload(BaseModel):
