@@ -17,10 +17,12 @@ import {
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
+import type { Breakpoint } from "antd";
 import type { RuleSource } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
+import useIsMobile from "@/hooks/useIsMobile";
 
 type RuleFormValues = {
   name: string;
@@ -55,6 +57,7 @@ function linesTextToArray(text: string | undefined): string[] {
 }
 
 export default function RulesPage() {
+  const isMobile = useIsMobile();
   const [items, setItems] = useState<RuleSource[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -206,12 +209,14 @@ export default function RulesPage() {
       title: "Mode",
       dataIndex: "mode",
       key: "mode",
+      responsive: ["sm"] as Breakpoint[],
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
       title: "Behavior",
       dataIndex: "behavior",
       key: "behavior",
+      responsive: ["sm"] as Breakpoint[],
       render: (value: string) => <Tag color="blue">{value}</Tag>,
     },
     {
@@ -225,6 +230,7 @@ export default function RulesPage() {
     {
       title: "Last Refresh",
       key: "last_refresh_at",
+      responsive: ["md"] as Breakpoint[],
       render: (_: unknown, row: RuleSource) =>
         row.last_refresh_at ? (
           <Tooltip title={new Date(row.last_refresh_at).toLocaleString()}>
@@ -237,6 +243,7 @@ export default function RulesPage() {
     {
       title: "Next Refresh",
       key: "next_refresh_at",
+      responsive: ["md"] as Breakpoint[],
       render: (_: unknown, row: RuleSource) =>
         row.next_refresh_at ? (
           <Tooltip title={new Date(row.next_refresh_at).toLocaleString()}>
@@ -290,6 +297,7 @@ export default function RulesPage() {
         dataSource={items}
         columns={columns}
         pagination={false}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal
@@ -297,7 +305,7 @@ export default function RulesPage() {
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void handleSubmit()}
-        width={720}
+        width={isMobile ? "95vw" : 720}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" initialValues={defaultFormValues}>
@@ -364,7 +372,7 @@ export default function RulesPage() {
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
-        width={800}
+        width={isMobile ? "95vw" : 800}
         destroyOnHidden
       >
         <Input.TextArea

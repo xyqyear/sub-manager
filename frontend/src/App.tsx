@@ -1,6 +1,7 @@
 import { Button, Layout, Menu, Space, Tag, Tooltip, Typography } from "antd";
 import { LogoutOutlined } from "@ant-design/icons";
 import { ErrorBoundary } from "react-error-boundary";
+import useIsMobile from "@/hooks/useIsMobile";
 import {
   Link,
   Navigate,
@@ -34,6 +35,7 @@ function ErrorFallback() {
 function ProtectedAppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const doLogout = () => {
     clearAdminToken();
@@ -46,11 +48,11 @@ function ProtectedAppLayout() {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Header style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <Typography.Title level={4} style={{ color: "#fff", margin: 0 }}>
+      <Header style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 16 }}>
+        <Typography.Title level={4} style={{ color: "#fff", margin: 0, whiteSpace: "nowrap" }}>
           Sub Manager
         </Typography.Title>
-        <Tag color="blue">Token Admin</Tag>
+        {!isMobile && <Tag color="blue">Token Admin</Tag>}
         <Menu
           mode="horizontal"
           theme="dark"
@@ -58,7 +60,7 @@ function ProtectedAppLayout() {
           items={[
             { key: "/subscriptions", label: <Link to="/subscriptions">Subscriptions</Link> },
             { key: "/rules", label: <Link to="/rules">Rules</Link> },
-            { key: "/configs", label: <Link to="/configs">Main Configs</Link> },
+            { key: "/configs", label: <Link to="/configs">Configs</Link> },
           ]}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
         />
@@ -67,7 +69,7 @@ function ProtectedAppLayout() {
         </Tooltip>
       </Header>
 
-      <Content style={{ padding: 24 }}>
+      <Content style={{ padding: isMobile ? 12 : 24 }}>
         <Routes>
           <Route path="/subscriptions" element={<SubscriptionsPage />} />
           <Route path="/rules" element={<RulesPage />} />

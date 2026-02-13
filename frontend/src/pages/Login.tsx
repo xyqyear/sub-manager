@@ -24,7 +24,7 @@ export default function LoginPage() {
         padding: 24,
       }}
     >
-      <Card title="Admin Login" style={{ width: 420 }}>
+      <Card title="Admin Login" style={{ maxWidth: 420, width: "100%" }}>
         <Typography.Paragraph type="secondary">
           Enter the configured admin bearer token.
         </Typography.Paragraph>

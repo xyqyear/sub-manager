@@ -13,6 +13,7 @@ import {
 import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import MainConfigEditorDrawer from "@/pages/main-configs/MainConfigEditorDrawer";
+import type { Breakpoint } from "antd";
 import type {
   MainConfig,
   PreviewResponse,
@@ -20,8 +21,10 @@ import type {
   SubscriptionSource,
 } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
+import useIsMobile from "@/hooks/useIsMobile";
 
 export default function MainConfigsPage() {
+  const isMobile = useIsMobile();
   const [items, setItems] = useState<MainConfig[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionSource[]>([]);
   const [rules, setRules] = useState<RuleSource[]>([]);
@@ -111,6 +114,7 @@ export default function MainConfigsPage() {
     {
       title: "Final Target",
       key: "final_target",
+      responsive: ["sm"] as Breakpoint[],
       render: (_: unknown, row: MainConfig) => (
         <Tag color="blue">
           {row.final_target_type === "group"
@@ -123,6 +127,7 @@ export default function MainConfigsPage() {
       title: "Enabled",
       dataIndex: "enabled",
       key: "enabled",
+      responsive: ["sm"] as Breakpoint[],
       render: (value: boolean) => (
         <Tag color={value ? "success" : "default"}>{value ? "on" : "off"}</Tag>
       ),
@@ -168,6 +173,7 @@ export default function MainConfigsPage() {
         dataSource={items}
         columns={columns}
         pagination={false}
+        scroll={{ x: "max-content" }}
       />
 
       <MainConfigEditorDrawer
@@ -184,7 +190,7 @@ export default function MainConfigsPage() {
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
-        width={1000}
+        width={isMobile ? "95vw" : 1000}
         destroyOnHidden
       >
         {previewDiagnostics ? (

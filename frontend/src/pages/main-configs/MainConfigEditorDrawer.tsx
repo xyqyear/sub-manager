@@ -31,6 +31,7 @@ import type {
   SubscriptionSource,
 } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
+import useIsMobile from "@/hooks/useIsMobile";
 
 type FinalTargetType = "DIRECT" | "REJECT" | "group";
 type ManualMemberType = "filtered_group" | "manual_group";
@@ -166,6 +167,7 @@ export default function MainConfigEditorDrawer({
   onSaved,
 }: MainConfigEditorDrawerProps) {
   const [form] = Form.useForm<EditorFormValues>();
+  const isMobile = useIsMobile();
   const [saving, setSaving] = useState(false);
   const [filteredGroupPreviews, setFilteredGroupPreviews] =
     useState<FilteredGroupPreviewResponse["groups"]>([]);
@@ -378,7 +380,7 @@ export default function MainConfigEditorDrawer({
       title={config ? `Edit ${config.name}` : "Create Main Config"}
       open={open}
       onClose={onClose}
-      width={1200}
+      width={isMobile ? "100%" : 1200}
       destroyOnHidden
       extra={
         <Space>
@@ -398,12 +400,12 @@ export default function MainConfigEditorDrawer({
         <Typography.Title level={5}>Main Settings</Typography.Title>
 
         <Row gutter={12}>
-          <Col span={8}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item name="name" label="Config Name" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item
               name="password_plain"
               label="Config Password"
@@ -412,7 +414,7 @@ export default function MainConfigEditorDrawer({
               <Input.Password />
             </Form.Item>
           </Col>
-          <Col span={4}>
+          <Col xs={12} sm={6} md={4}>
             <Form.Item name="enabled" label="Enabled" valuePropName="checked">
               <Switch />
             </Form.Item>
@@ -420,7 +422,7 @@ export default function MainConfigEditorDrawer({
         </Row>
 
         <Row gutter={12}>
-          <Col span={8}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item
               name="final_target_type"
               label="Final Target Type"
@@ -436,7 +438,7 @@ export default function MainConfigEditorDrawer({
             </Form.Item>
           </Col>
           {finalTargetType === "group" ? (
-            <Col span={8}>
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 name="final_target_group_name"
                 label="Final Target Group"
@@ -503,7 +505,7 @@ export default function MainConfigEditorDrawer({
                       children: (
                         <Space direction="vertical" style={{ display: "flex" }}>
                           <Row gutter={12}>
-                            <Col span={10}>
+                            <Col xs={24} sm={10}>
                               <Form.Item
                                 name={[field.name, "name"]}
                                 label="Group Name"
@@ -512,7 +514,7 @@ export default function MainConfigEditorDrawer({
                                 <Input onBlur={() => void triggerFilteredGroupPreview()} />
                               </Form.Item>
                             </Col>
-                            <Col span={7}>
+                            <Col xs={12} sm={7}>
                               <Form.Item
                                 name={[field.name, "group_mode"]}
                                 label="Mode"
@@ -521,7 +523,7 @@ export default function MainConfigEditorDrawer({
                                 <Select options={groupModeOptions} />
                               </Form.Item>
                             </Col>
-                            <Col span={7}>
+                            <Col xs={12} sm={7}>
                               <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
                                 <InputNumber min={1} style={{ width: "100%" }} />
                               </Form.Item>
@@ -538,7 +540,7 @@ export default function MainConfigEditorDrawer({
                                 {ruleFields.map((ruleField, ruleIndex) => (
                                   <Card key={ruleField.key} size="small">
                                     <Row gutter={12}>
-                                      <Col span={8}>
+                                      <Col xs={24} sm={8}>
                                         <Form.Item
                                           name={[ruleField.name, "subscription_source_id"]}
                                           label="Subscription"
@@ -553,7 +555,7 @@ export default function MainConfigEditorDrawer({
                                           />
                                         </Form.Item>
                                       </Col>
-                                      <Col span={8}>
+                                      <Col xs={16} sm={8}>
                                         <Form.Item
                                           name={[ruleField.name, "regex_pattern"]}
                                           label="Regex"
@@ -562,7 +564,7 @@ export default function MainConfigEditorDrawer({
                                           <Input onBlur={() => void triggerFilteredGroupPreview()} />
                                         </Form.Item>
                                       </Col>
-                                      <Col span={4}>
+                                      <Col xs={8} sm={4}>
                                         <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags">
                                           <Input
                                             placeholder="i"
@@ -570,7 +572,7 @@ export default function MainConfigEditorDrawer({
                                           />
                                         </Form.Item>
                                       </Col>
-                                      <Col span={4}>
+                                      <Col xs={24} sm={4}>
                                         <Form.Item label=" ">
                                           <Space size={4}>
                                             <MoveControls
@@ -702,7 +704,7 @@ export default function MainConfigEditorDrawer({
                       children: (
                         <Space direction="vertical" style={{ display: "flex" }}>
                           <Row gutter={12}>
-                            <Col span={10}>
+                            <Col xs={24} sm={10}>
                               <Form.Item
                                 name={[field.name, "name"]}
                                 label="Group Name"
@@ -711,7 +713,7 @@ export default function MainConfigEditorDrawer({
                                 <Input />
                               </Form.Item>
                             </Col>
-                            <Col span={7}>
+                            <Col xs={12} sm={7}>
                               <Form.Item
                                 name={[field.name, "group_mode"]}
                                 label="Mode"
@@ -720,7 +722,7 @@ export default function MainConfigEditorDrawer({
                                 <Select options={groupModeOptions} />
                               </Form.Item>
                             </Col>
-                            <Col span={7}>
+                            <Col xs={12} sm={7}>
                               <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
                                 <InputNumber min={1} style={{ width: "100%" }} />
                               </Form.Item>
@@ -737,7 +739,7 @@ export default function MainConfigEditorDrawer({
                                 {memberFields.map((memberField, memberIndex) => (
                                   <Card key={memberField.key} size="small">
                                     <Row gutter={12}>
-                                      <Col span={6}>
+                                      <Col xs={24} sm={6}>
                                         <Form.Item
                                           name={[memberField.name, "member_type"]}
                                           label="Type"
@@ -751,7 +753,7 @@ export default function MainConfigEditorDrawer({
                                           />
                                         </Form.Item>
                                       </Col>
-                                      <Col span={12}>
+                                      <Col xs={24} sm={12}>
                                         <Form.Item noStyle shouldUpdate>
                                           {() => {
                                             const memberType = form.getFieldValue([
@@ -790,7 +792,7 @@ export default function MainConfigEditorDrawer({
                                           }}
                                         </Form.Item>
                                       </Col>
-                                      <Col span={6}>
+                                      <Col xs={24} sm={6}>
                                         <Form.Item label=" ">
                                           <Space size={4}>
                                             <MoveControls
@@ -853,7 +855,7 @@ export default function MainConfigEditorDrawer({
               {fields.map((field, index) => (
                 <Card key={field.key} size="small">
                   <Row gutter={12}>
-                    <Col span={10}>
+                    <Col xs={24} sm={10}>
                       <Form.Item
                         name={[field.name, "filtered_group_name"]}
                         label="Filtered Group"
@@ -862,7 +864,7 @@ export default function MainConfigEditorDrawer({
                         <Select options={filteredGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
-                    <Col span={8}>
+                    <Col xs={24} sm={8}>
                       <Form.Item
                         name={[field.name, "dialer_group_name"]}
                         label="Dialer Group"
@@ -871,7 +873,7 @@ export default function MainConfigEditorDrawer({
                         <Select options={nonShuntGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={4}>
                       <Form.Item label=" ">
                         <Space size={4}>
                           <MoveControls index={index} total={fields.length} onMove={move} />
@@ -907,7 +909,7 @@ export default function MainConfigEditorDrawer({
               {fields.map((field, index) => (
                 <Card key={field.key} size="small">
                   <Row gutter={12}>
-                    <Col span={6}>
+                    <Col xs={24} sm={12} md={6}>
                       <Form.Item
                         name={[field.name, "rule_source_id"]}
                         label="Rule Source"
@@ -922,7 +924,7 @@ export default function MainConfigEditorDrawer({
                         />
                       </Form.Item>
                     </Col>
-                    <Col span={6}>
+                    <Col xs={24} sm={12} md={6}>
                       <Form.Item noStyle shouldUpdate>
                         {() => {
                           const ruleSourceId = form.getFieldValue([
@@ -942,7 +944,7 @@ export default function MainConfigEditorDrawer({
                         }}
                       </Form.Item>
                     </Col>
-                    <Col span={5}>
+                    <Col xs={24} sm={12} md={5}>
                       <Form.Item
                         name={[field.name, "default_group_name"]}
                         label="Default Group"
@@ -951,12 +953,12 @@ export default function MainConfigEditorDrawer({
                         <Select options={shuntDefaultGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
-                    <Col span={3}>
+                    <Col xs={12} sm={6} md={3}>
                       <Form.Item name={[field.name, "no_resolve"]} label="No Resolve" valuePropName="checked">
                         <Switch />
                       </Form.Item>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={12} sm={6} md={4}>
                       <Form.Item label=" ">
                         <Space size={4}>
                           <MoveControls index={index} total={fields.length} onMove={move} />
@@ -992,7 +994,7 @@ export default function MainConfigEditorDrawer({
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
-        width={1000}
+        width={isMobile ? "95vw" : 1000}
         destroyOnHidden
       >
         {previewDiagnostics ? (

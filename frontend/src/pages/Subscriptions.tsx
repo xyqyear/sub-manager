@@ -18,11 +18,13 @@ import {
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
+import type { Breakpoint } from "antd";
 import type { SubscriptionSource } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import { formatBytes, TRAFFIC_COLORS } from "@/utils/format";
 import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
+import useIsMobile from "@/hooks/useIsMobile";
 
 type SubscriptionFormValues = {
   name: string;
@@ -47,6 +49,7 @@ const defaultFormValues: SubscriptionFormValues = {
 };
 
 export default function SubscriptionsPage() {
+  const isMobile = useIsMobile();
   const [items, setItems] = useState<SubscriptionSource[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -157,6 +160,7 @@ export default function SubscriptionsPage() {
       title: "Mode",
       dataIndex: "mode",
       key: "mode",
+      responsive: ["sm"] as Breakpoint[],
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
@@ -170,6 +174,7 @@ export default function SubscriptionsPage() {
     {
       title: "Last Refresh",
       key: "last_refresh_at",
+      responsive: ["md"] as Breakpoint[],
       render: (_: unknown, row: SubscriptionSource) =>
         row.last_refresh_at ? (
           <Tooltip title={new Date(row.last_refresh_at).toLocaleString()}>
@@ -182,6 +187,7 @@ export default function SubscriptionsPage() {
     {
       title: "Next Refresh",
       key: "next_refresh_at",
+      responsive: ["md"] as Breakpoint[],
       render: (_: unknown, row: SubscriptionSource) =>
         row.next_refresh_at ? (
           <Tooltip title={new Date(row.next_refresh_at).toLocaleString()}>
@@ -195,6 +201,7 @@ export default function SubscriptionsPage() {
       title: "Traffic",
       key: "traffic",
       width: 280,
+      responsive: ["lg"] as Breakpoint[],
       render: (_: unknown, row: SubscriptionSource) => {
         const info = row.subscription_userinfo_json;
         if (!info || !info.total) return <Typography.Text type="secondary">-</Typography.Text>;
@@ -277,6 +284,7 @@ export default function SubscriptionsPage() {
         dataSource={items}
         columns={columns}
         pagination={false}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal
@@ -284,7 +292,7 @@ export default function SubscriptionsPage() {
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void handleSubmit()}
-        width={720}
+        width={isMobile ? "95vw" : 720}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" initialValues={defaultFormValues}>
@@ -341,7 +349,7 @@ export default function SubscriptionsPage() {
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
-        width={800}
+        width={isMobile ? "95vw" : 800}
         destroyOnHidden
       >
         <Input.TextArea
