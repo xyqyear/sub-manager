@@ -1,4 +1,3 @@
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,8 +23,6 @@ class Settings(BaseSettings):
     request_timeout_sec: float = 30.0
     min_refresh_interval_sec: int = 60
     max_refresh_interval_sec: int = 86400
-
-    query_password_name: str = Field(default="password")
 
 
 settings = Settings()

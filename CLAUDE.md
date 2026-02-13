@@ -307,7 +307,6 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 | `MAX_REFRESH_INTERVAL_SEC`| `86400`                              | Clamp for auto-update interval       |
 | `DEFAULT_TEST_URL`        | `https://www.gstatic.com/generate_204`| Fallback for group test_url         |
 | `DEFAULT_TEST_INTERVAL`   | `300`                                | Fallback for group test_interval     |
-| `QUERY_PASSWORD_NAME`     | `password`                           | Query param name in generated URLs   |
 
 ## Background Refresh
 
@@ -332,4 +331,3 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 - No Alembic migrations in use; runtime uses `create_all()`.
 - No Docker files in this repository.
 - Plaintext credentials by design (admin_token, password_plain).
-- `QUERY_PASSWORD_NAME` setting can diverge from hardcoded `password` query param in public endpoints.

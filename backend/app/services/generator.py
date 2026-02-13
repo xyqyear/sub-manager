@@ -576,7 +576,7 @@ async def _run_generation(
         password = quote_plus(config.password_plain)
         rule_url = (
             f"{settings.public_base_url.rstrip('/')}{settings.api_prefix}/public/"
-            f"configs/{config_id_for_url}/rules/{rule_source.id}.yaml?{settings.query_password_name}={password}"
+            f"configs/{config_id_for_url}/rules/{rule_source.id}.yaml?password={password}"
         )
 
         rule_providers[provider_key] = RuleProviderObj(
