@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -53,7 +55,7 @@ class SubscriptionRead(BaseModel):
     subscription_userinfo_raw: str | None
     subscription_userinfo_json: dict[str, int] | None
 
-    cached_proxies_json: list[dict] | None
+    cached_proxies_json: list[dict[str, Any]] | None
     created_at: datetime
     updated_at: datetime
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import copy
+from typing import Any
 
 import httpx
 from sqlalchemy import select
@@ -18,7 +19,7 @@ def _normalize_interval(interval_sec: int) -> int:
     return max(settings.min_refresh_interval_sec, min(settings.max_refresh_interval_sec, interval_sec))
 
 
-def _validate_manual_proxy_text(proxy_yaml_object_text: str | None) -> dict:
+def _validate_manual_proxy_text(proxy_yaml_object_text: str | None) -> dict[str, Any]:
     if not proxy_yaml_object_text:
         raise ServiceError("manual mode requires proxy_yaml_object_text", 422)
 
@@ -36,7 +37,7 @@ def _validate_manual_proxy_text(proxy_yaml_object_text: str | None) -> dict:
     return parsed
 
 
-def _parse_remote_subscription_payload(content: str) -> list[dict]:
+def _parse_remote_subscription_payload(content: str) -> list[dict[str, Any]]:
     try:
         parsed = yaml.safe_load(content)
     except yaml.YAMLError as exc:
@@ -49,7 +50,7 @@ def _parse_remote_subscription_payload(content: str) -> list[dict]:
     if not isinstance(proxies, list):
         raise ServiceError("subscription missing proxies list", 422)
 
-    normalized: list[dict] = []
+    normalized: list[dict[str, Any]] = []
     for item in proxies:
         if isinstance(item, dict):
             normalized.append(copy.deepcopy(item))

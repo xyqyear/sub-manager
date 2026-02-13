@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 import re
+from typing import cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,15 +29,18 @@ from app.schemas.configs import (
     FilteredGroupPreviewResponse,
     FilteredGroupPayload,
     FilteredGroupRulePayload,
+    GroupMode,
     MainConfigCreate,
-    MainConfigRead,
     MainConfigUpdate,
     ManualGroupMemberPayload,
     ManualGroupPayload,
+    MemberType,
     ShuntBindingPayload,
 )
 from app.services.common import ServiceError
 from app.services.generator import (
+    FilteredRuleMatch,
+    OrderedSource,
     build_proxy_pool_with_collision_names,
     match_filtered_rules_on_proxies,
 )
@@ -280,7 +284,7 @@ async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
         FilteredGroupPayload(
             name=item.name,
             position=item.position,
-            group_mode=item.group_mode,
+            group_mode=cast(GroupMode, item.group_mode),
             test_url=item.test_url,
             test_interval_sec=item.test_interval_sec,
             rules=fg_rules_map.get(item.id, []),
@@ -302,7 +306,7 @@ async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
         for member in mg_member_result.scalars().all():
             mg_members_map[member.manual_group_id].append(
                 ManualGroupMemberPayload(
-                    member_type=member.member_type,
+                    member_type=cast(MemberType, member.member_type),
                     member_ref=member.member_ref,
                     position=member.position,
                 )
@@ -312,7 +316,7 @@ async def get_builder(db: AsyncSession, config_id: str) -> BuilderRead:
         ManualGroupPayload(
             name=item.name,
             position=item.position,
-            group_mode=item.group_mode,
+            group_mode=cast(GroupMode, item.group_mode),
             test_url=item.test_url,
             test_interval_sec=item.test_interval_sec,
             members=mg_members_map.get(item.id, []),
@@ -475,19 +479,26 @@ async def preview_filtered_group_matches(
             for row in result.scalars().all()
         }
 
-    ordered_sources: list[tuple[str, str, list[dict]]] = []
+    ordered_sources: list[OrderedSource] = []
     for source_id in subscription_ids:
         source = subscription_map.get(source_id)
         if source is None or not source.enabled or not source.cached_proxies_json:
             continue
-        ordered_sources.append((source.id, source.name, source.cached_proxies_json))
+        ordered_sources.append(
+            OrderedSource(
+                source_id=source.id,
+                source_name=source.name,
+                cached_proxies=source.cached_proxies_json,
+            )
+        )
 
-    _, proxies_by_source, _ = build_proxy_pool_with_collision_names(ordered_sources)
+    pool_result = build_proxy_pool_with_collision_names(ordered_sources)
+    proxies_by_source = pool_result.proxies_by_source
 
     preview_items: list[FilteredGroupPreviewItem] = []
     for group_index, group in enumerate(payload.filtered_groups):
         group_name = group.name or f"Filtered Group #{group_index + 1}"
-        valid_rules: list[tuple[str, str, str]] = []
+        valid_rules: list[FilteredRuleMatch] = []
         issues: list[str] = []
 
         ordered_rules = sorted(
@@ -525,7 +536,13 @@ async def preview_filtered_group_matches(
                 issues.append(f"Invalid regex {regex_pattern}: {exc}")
                 continue
 
-            valid_rules.append((source_id, regex_pattern, rule.regex_flags))
+            valid_rules.append(
+                FilteredRuleMatch(
+                    source_id=source_id,
+                    regex_pattern=regex_pattern,
+                    regex_flags=rule.regex_flags,
+                )
+            )
 
         matched_proxy_names = match_filtered_rules_on_proxies(
             valid_rules,

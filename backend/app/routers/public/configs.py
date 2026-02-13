@@ -38,7 +38,7 @@ async def get_artifact(
     _check_password(config, password)
 
     try:
-        generated_yaml, _ = await generate_config_yaml(
+        result = await generate_config_yaml(
             db,
             config,
             enqueue_subscription_refresh=refresh_loop_manager.enqueue_subscription_refresh,
@@ -47,7 +47,7 @@ async def get_artifact(
     except GenerationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
-    return PlainTextResponse(generated_yaml, media_type="application/yaml")
+    return PlainTextResponse(result.yaml, media_type="application/yaml")
 
 
 @router.get("/{config_id}/rules/{rule_source_id}.yaml", response_class=PlainTextResponse)

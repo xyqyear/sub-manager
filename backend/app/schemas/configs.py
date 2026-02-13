@@ -165,5 +165,9 @@ class DraftPreviewRequest(BaseModel):
     builder: BuilderPayload
 
 
+class StatusResponse(BaseModel):
+    status: str
+
+
 class PasswordQuery(BaseModel):
     password: str

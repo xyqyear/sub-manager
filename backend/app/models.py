@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 import uuid
 
 from sqlalchemy import (
@@ -66,7 +67,7 @@ class SubscriptionSource(Base, TimestampMixin):
     )
 
     cached_raw_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cached_proxies_json: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    cached_proxies_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 
 class RuleSource(Base, TimestampMixin):

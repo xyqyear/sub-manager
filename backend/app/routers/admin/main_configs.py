@@ -90,18 +90,18 @@ async def preview_draft_endpoint(
         validate_base_yaml(payload.base_config_yaml)
         validate_builder_shapes(payload.builder)
         await validate_builder_refs(db, payload.builder)
-        generated_yaml, diagnostics = await generate_config_yaml_from_draft(
+        result = await generate_config_yaml_from_draft(
             db,
             payload,
             enqueue_subscription_refresh=refresh_loop_manager.enqueue_subscription_refresh,
             enqueue_rule_refresh=refresh_loop_manager.enqueue_rule_refresh,
         )
         return PreviewWithDiagnosticsResponse(
-            yaml=generated_yaml,
+            yaml=result.yaml,
             diagnostics=GenerationDiagnostics(
-                stale_subscription_ids=diagnostics.stale_subscription_ids,
-                stale_rule_ids=diagnostics.stale_rule_ids,
-                warnings=diagnostics.warnings,
+                stale_subscription_ids=result.diagnostics.stale_subscription_ids,
+                stale_rule_ids=result.diagnostics.stale_rule_ids,
+                warnings=result.diagnostics.warnings,
             ),
         )
     except ServiceError as exc:
@@ -169,18 +169,18 @@ async def preview_config_endpoint(
 ) -> PreviewWithDiagnosticsResponse:
     try:
         config = await get_main_config_or_404(db, config_id)
-        generated_yaml, diagnostics = await generate_config_yaml(
+        result = await generate_config_yaml(
             db,
             config,
             enqueue_subscription_refresh=refresh_loop_manager.enqueue_subscription_refresh,
             enqueue_rule_refresh=refresh_loop_manager.enqueue_rule_refresh,
         )
         return PreviewWithDiagnosticsResponse(
-            yaml=generated_yaml,
+            yaml=result.yaml,
             diagnostics=GenerationDiagnostics(
-                stale_subscription_ids=diagnostics.stale_subscription_ids,
-                stale_rule_ids=diagnostics.stale_rule_ids,
-                warnings=diagnostics.warnings,
+                stale_subscription_ids=result.diagnostics.stale_subscription_ids,
+                stale_rule_ids=result.diagnostics.stale_rule_ids,
+                warnings=result.diagnostics.warnings,
             ),
         )
     except ServiceError as exc:
