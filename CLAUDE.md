@@ -58,7 +58,6 @@ Each rule source has a behavior type: `classical` (full rule syntax), `domain` (
 This is where everything comes together. A main config has:
 - A base YAML (ports, DNS, TUN settings, etc. — everything except proxies, groups, and rules)
 - Four builder field groups (filtered groups, manual groups, dialer overrides, route bindings) that visually compose proxy groups and routing rules (see below)
-- A password for public access
 
 ### The Builder
 
@@ -97,7 +96,7 @@ Each route binding generates a `select`-type proxy group whose members are: `[de
 
 ### Output
 
-The system generates a complete Clash Meta YAML config accessible via a password-protected public URL. Clash Meta clients subscribe to this URL. When subscriptions or rules refresh, the generated config automatically reflects the latest data.
+The system generates a complete Clash Meta YAML config accessible via a public URL (secured by unguessable UUID). Clash Meta clients subscribe to this URL. When subscriptions or rules refresh, the generated config automatically reflects the latest data.
 
 Rule payloads referenced in the config's `rule-providers` section point back to this server's own URLs (not the original remote URLs), so the system acts as a caching proxy for rules.
 
@@ -108,7 +107,7 @@ Rule payloads referenced in the config's `rule-providers` section point back to 
 | Backend  | FastAPI + async SQLAlchemy + aiosqlite, Python >= 3.13 |
 | Frontend | React 19 + Vite 7 + Ant Design 6 + TypeScript 5.9     |
 | Database | SQLite (single file `backend/db.sqlite3`)              |
-| Auth     | Static bearer token (admin), per-config password (public) |
+| Auth     | Static bearer token (admin)                            |
 
 ## Repository Layout
 
@@ -127,7 +126,7 @@ backend/
       rules.py                     # rule CRUD + refresh
       main_configs.py              # config CRUD + preview + filtered-group-preview
     routers/public/
-      configs.py                   # public artifact + rule-payload fetch (password protected)
+      configs.py                   # public artifact + rule-payload fetch
     schemas/                       # pydantic request/response models
       subscriptions.py
       rules.py
@@ -188,7 +187,6 @@ Corresponds to Stage 2 (traffic routing rules). Two modes (remote/manual). Each 
 
 Corresponds to Stage 3 (the composition layer). A main config combines subscriptions + rules into a final output. Each config has:
 - `base_config_yaml`: base Clash settings (ports, DNS, TUN, etc.)
-- `password_plain`: per-config access password for public endpoints
 - `final_target_type`: DIRECT / REJECT / group (for the trailing MATCH rule)
 - A **builder graph** stored as 4 JSON columns directly on `main_config`, using a `PydanticListType` TypeDecorator that serializes/deserializes via Pydantic `TypeAdapter`:
 
@@ -214,7 +212,7 @@ The generation pipeline uses a single `GenerationInput` model and `generate_conf
 7. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
 8. **Route groups + rule-providers** - Each binding generates:
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
-   - A `rule-providers` entry pointing to `{public_base_url}/api/public/configs/{id}/rules/{rule_id}.yaml?password=...`
+   - A `rule-providers` entry pointing to `{public_base_url}/api/public/configs/{id}/rules/{rule_id}.yaml`
    - A `RULE-SET,{provider_key},{binding_name}` rules line
 9. **Final MATCH** - Appended last: `MATCH,{final_target}`
 10. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
@@ -255,8 +253,8 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 
 | Method | Path                                                        | Purpose            |
 |--------|-------------------------------------------------------------|--------------------|
-| GET    | `/api/public/configs/{id}/artifact?password=...`            | Generated YAML     |
-| GET    | `/api/public/configs/{id}/rules/{rule_id}.yaml?password=...`| Rule payload YAML  |
+| GET    | `/api/public/configs/{id}/artifact`                         | Generated YAML     |
+| GET    | `/api/public/configs/{id}/rules/{rule_id}.yaml`             | Rule payload YAML  |
 
 ## Key Backend Schemas
 
@@ -265,7 +263,7 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 # MainConfigUpdate (PUT /api/admin/main-configs/{id}) — all fields optional
 # MainConfigRead — response model, includes all fields below
 MainConfig fields:
-  name, password_plain, base_config_yaml, enabled, final_target_type, final_target_group_name
+  name, base_config_yaml, enabled, final_target_type, final_target_group_name
   filtered_groups: [{name, position, group_mode, test_url?, test_interval_sec?, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
   manual_groups: [{name, position, group_mode, test_url?, test_interval_sec?, members: [{member_type, member_ref, position}]}]
   dialer_override_rules: [{filtered_group_name, dialer_group_name}]
@@ -274,7 +272,6 @@ MainConfig fields:
 # Draft preview (POST /api/admin/main-configs/preview-draft)
 DraftPreviewRequest:
   base_config_yaml: str
-  password_plain: str
   final_target_type: FinalTargetType
   final_target_group_name: str | None
   config_id: str | None
@@ -290,7 +287,7 @@ PreviewWithDiagnosticsResponse:
 
 # Generator input (internal, not an API schema)
 GenerationInput:
-  config_id, base_config_yaml, password_plain, final_target_type, final_target_group_name
+  config_id, base_config_yaml, final_target_type, final_target_group_name
   filtered_groups, manual_groups, dialer_override_rules, route_bindings
 
 # Type enums
@@ -336,4 +333,4 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 
 - No Alembic migrations in use; runtime uses `create_all()`.
 - No Docker files in this repository.
-- Plaintext credentials by design (admin_token, password_plain).
+- Plaintext admin_token by design.

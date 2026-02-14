@@ -47,7 +47,6 @@ interface MainConfigEditorDrawerProps {
 
 type EditorFormValues = {
   name: string;
-  password_plain: string;
   base_config_yaml: string;
   enabled: boolean;
   final_target_type: FinalTargetType;
@@ -58,7 +57,6 @@ const DEFAULT_BASE_YAML = "mixed-port: 7890\nmode: rule\n";
 
 const defaultValues: EditorFormValues = {
   name: "",
-  password_plain: "",
   base_config_yaml: DEFAULT_BASE_YAML,
   enabled: true,
   final_target_type: "DIRECT",
@@ -294,7 +292,6 @@ export default function MainConfigEditorDrawer({
       const nextValues: EditorFormValues = {
         ...defaultValues,
         name: config.name,
-        password_plain: config.password_plain,
         base_config_yaml: config.base_config_yaml,
         enabled: config.enabled,
         final_target_type: config.final_target_type,
@@ -318,7 +315,6 @@ export default function MainConfigEditorDrawer({
       const groupFields = normalizeGroupFields(values, rules);
       const payload = {
         base_config_yaml: values.base_config_yaml,
-        password_plain: values.password_plain,
         final_target_type: values.final_target_type,
         final_target_group_name:
           values.final_target_type === "group"
@@ -349,7 +345,6 @@ export default function MainConfigEditorDrawer({
       const groupFields = normalizeGroupFields(values, rules);
       const payload = {
         name: values.name,
-        password_plain: values.password_plain,
         base_config_yaml: values.base_config_yaml,
         enabled: values.enabled,
         final_target_type: values.final_target_type,
@@ -404,15 +399,6 @@ export default function MainConfigEditorDrawer({
           <Col xs={24} sm={12} md={8}>
             <Form.Item name="name" label="Config Name" rules={[{ required: true }]}>
               <Input />
-            </Form.Item>
-          </Col>
-          <Col xs={24} sm={12} md={8}>
-            <Form.Item
-              name="password_plain"
-              label="Config Password"
-              rules={[{ required: true }]}
-            >
-              <Input.Password />
             </Form.Item>
           </Col>
           <Col xs={12} sm={6} md={4}>

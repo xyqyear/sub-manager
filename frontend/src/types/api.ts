@@ -43,7 +43,6 @@ export interface RuleSource {
 export interface MainConfig {
   id: string;
   name: string;
-  password_plain: string;
   base_config_yaml: string;
   enabled: boolean;
   final_target_type: "DIRECT" | "REJECT" | "group";

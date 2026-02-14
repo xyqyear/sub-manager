@@ -96,7 +96,7 @@ export default function MainConfigsPage() {
   };
 
   const handleCopyArtifactLink = async (item: MainConfig) => {
-    const link = `${window.location.origin}/api/public/configs/${item.id}/artifact?password=${encodeURIComponent(item.password_plain)}`;
+    const link = `${window.location.origin}/api/public/configs/${item.id}/artifact`;
     try {
       await navigator.clipboard.writeText(link);
       void message.success("Artifact URL copied");

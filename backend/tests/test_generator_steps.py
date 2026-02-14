@@ -88,7 +88,6 @@ def _make_rule_source(**kwargs: Any) -> Any:
 def _make_source_input(**overrides: Any) -> GenerationInput:
     defaults: dict[str, Any] = dict(
         base_config_yaml="mixed-port: 7890\n",
-        password_plain="pw",
         final_target_type="DIRECT",
     )
     defaults.update(overrides)

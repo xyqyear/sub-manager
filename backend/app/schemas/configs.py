@@ -14,7 +14,6 @@ MemberType = Literal["filtered_group", "manual_group"]
 
 class MainConfigCreate(BaseModel):
     name: str
-    password_plain: str
     base_config_yaml: str
     enabled: bool = True
     final_target_type: FinalTargetType = "DIRECT"
@@ -27,7 +26,6 @@ class MainConfigCreate(BaseModel):
 
 class MainConfigUpdate(BaseModel):
     name: str | None = None
-    password_plain: str | None = None
     base_config_yaml: str | None = None
     enabled: bool | None = None
     final_target_type: FinalTargetType | None = None
@@ -43,7 +41,6 @@ class MainConfigRead(BaseModel):
 
     id: str
     name: str
-    password_plain: str
     base_config_yaml: str
     enabled: bool
     final_target_type: str
@@ -145,7 +142,6 @@ class PreviewWithDiagnosticsResponse(BaseModel):
 
 class DraftPreviewRequest(BaseModel):
     base_config_yaml: str
-    password_plain: str
     final_target_type: FinalTargetType = "DIRECT"
     final_target_group_name: str | None = None
     config_id: str | None = None

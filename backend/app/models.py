@@ -132,7 +132,6 @@ class MainConfig(Base, TimestampMixin):
         default=lambda: str(uuid.uuid4()),
     )
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    password_plain: Mapped[str] = mapped_column(Text, nullable=False)
     base_config_yaml: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

@@ -100,7 +100,6 @@ async def test_generation_flow_manual_sources(client, admin_headers):
         headers=admin_headers,
         json={
             "name": "cfg-1",
-            "password_plain": "pw1",
             "base_config_yaml": "mixed-port: 7890\nmode: rule\n",
             "final_target_type": "DIRECT",
             "filtered_groups": [
@@ -153,7 +152,6 @@ async def test_generation_flow_manual_sources(client, admin_headers):
 
     artifact_response = await client.get(
         f"/api/public/configs/{config_id}/artifact",
-        params={"password": "pw1"},
     )
     assert artifact_response.status_code == 200, artifact_response.text
     artifact = artifact_response.text
@@ -164,7 +162,6 @@ async def test_generation_flow_manual_sources(client, admin_headers):
 
     rule_payload_response = await client.get(
         f"/api/public/configs/{config_id}/rules/{rule_id}.yaml",
-        params={"password": "pw1"},
     )
     assert rule_payload_response.status_code == 200, rule_payload_response.text
     assert "payload:" in rule_payload_response.text
@@ -204,7 +201,6 @@ async def test_copy_nodes_isolates_dialer_override(client, admin_headers):
         headers=admin_headers,
         json={
             "name": "copy-nodes-test",
-            "password_plain": "pw",
             "base_config_yaml": "mixed-port: 7890\nmode: rule\n",
             "final_target_type": "DIRECT",
             "filtered_groups": [
@@ -260,7 +256,6 @@ async def test_copy_nodes_isolates_dialer_override(client, admin_headers):
 
     artifact = await client.get(
         f"/api/public/configs/{config_id}/artifact",
-        params={"password": "pw"},
     )
     assert artifact.status_code == 200, artifact.text
 

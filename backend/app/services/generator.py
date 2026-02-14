@@ -5,8 +5,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import re
 from typing import Any
-from urllib.parse import quote_plus
-
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +38,6 @@ class GenerationInput(BaseModel):
 
     config_id: str | None = None
     base_config_yaml: str
-    password_plain: str
     final_target_type: str
     final_target_group_name: str | None = None
     filtered_groups: list[FilteredGroupPayload] = []
@@ -53,7 +50,6 @@ class GenerationInput(BaseModel):
         return GenerationInput(
             config_id=config.id,
             base_config_yaml=config.base_config_yaml,
-            password_plain=config.password_plain,
             final_target_type=config.final_target_type,
             final_target_group_name=config.final_target_group_name,
             filtered_groups=config.filtered_groups,
@@ -67,7 +63,6 @@ class GenerationInput(BaseModel):
         return GenerationInput(
             config_id=draft.config_id,
             base_config_yaml=draft.base_config_yaml,
-            password_plain=draft.password_plain,
             final_target_type=draft.final_target_type,
             final_target_group_name=draft.final_target_group_name,
             filtered_groups=draft.filtered_groups,
@@ -442,10 +437,9 @@ def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, Rul
             provider_key = f"{provider_key}_{suffix}"
         provider_keys_used.add(provider_key)
 
-        password = quote_plus(ctx.source.password_plain)
         rule_url = (
             f"{settings.public_base_url.rstrip('/')}{settings.api_prefix}/public/"
-            f"configs/{config_id_for_url}/rules/{rule_source.id}.yaml?password={password}"
+            f"configs/{config_id_for_url}/rules/{rule_source.id}.yaml"
         )
         ctx.rule_providers[provider_key] = RuleProviderObj(
             type="http",

@@ -73,7 +73,6 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
 
     config = MainConfig(
         name=payload.name,
-        password_plain=payload.password_plain,
         base_config_yaml=payload.base_config_yaml,
         enabled=payload.enabled,
         final_target_type=payload.final_target_type,
@@ -94,9 +93,6 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
     if payload.name is not None and payload.name != config.name:
         await _assert_unique_config_name(db, payload.name, exclude_id=config.id)
         config.name = payload.name
-
-    if payload.password_plain is not None:
-        config.password_plain = payload.password_plain
 
     if payload.base_config_yaml is not None:
         validate_base_yaml(payload.base_config_yaml)
