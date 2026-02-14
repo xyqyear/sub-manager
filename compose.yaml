@@ -1,0 +1,13 @@
+services:
+  app:
+    image: ghcr.io/xyqyear/sub-manager
+    # build: .
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./data:/app/backend/data
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN:?set ADMIN_TOKEN}
+      - DATABASE_URL=sqlite+aiosqlite:///./data/db.sqlite3
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:5678}
+    restart: unless-stopped

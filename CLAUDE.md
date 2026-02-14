@@ -17,9 +17,12 @@ pnpm dev                        # starts on :3000, proxies /api -> :5678
 
 # tests
 cd backend && uv run pytest
+
+# docker
+docker compose up               # starts on :5678
 ```
 
-Set `ADMIN_TOKEN` in `backend/.env` (defaults to `change-me`). Use same token to log in on the frontend.
+Set `ADMIN_TOKEN` in `backend/.env` (defaults to `change-me`). Use same token to log in on the frontend. For Docker, set `ADMIN_TOKEN` as an environment variable or in a `.env` file next to `compose.yaml`.
 
 ## Product Overview
 
@@ -108,10 +111,14 @@ Rule payloads referenced in the config's `rule-providers` section point back to 
 | Frontend | React 19 + Vite 7 + Ant Design 6 + TypeScript 5.9     |
 | Database | SQLite (single file `backend/db.sqlite3`)              |
 | Auth     | Static bearer token (admin)                            |
+| Deploy   | Docker (multi-stage build, single container)           |
 
 ## Repository Layout
 
 ```
+Dockerfile                         # multi-stage: frontend build + backend venv + runtime
+compose.yaml                       # single-service deployment
+.dockerignore
 backend/
   main.py                          # dev entrypoint (uvicorn, port 5678, reload)
   app/
@@ -332,5 +339,4 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 ## Known Gaps / Technical Notes
 
 - No Alembic migrations in use; runtime uses `create_all()`.
-- No Docker files in this repository.
 - Plaintext admin_token by design.
