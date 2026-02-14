@@ -60,6 +60,32 @@ class SubscriptionRead(BaseModel):
     updated_at: UtcDatetime
 
 
+class SubscriptionListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    mode: SourceMode
+    enabled: bool
+
+    remote_url: str | None
+    remote_auth_header: str | None
+
+    auto_update: bool
+    update_interval_sec: int
+    next_refresh_at: UtcDatetime | None
+    last_refresh_at: UtcDatetime | None
+
+    last_status: str
+    last_error: str | None
+    subscription_userinfo_raw: str | None
+    subscription_userinfo_json: dict[str, int] | None
+
+    cached_proxies_count: int | None
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
 class SubscriptionRefreshResponse(BaseModel):
     id: str
     status: str

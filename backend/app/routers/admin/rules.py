@@ -5,14 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_token
 from app.db.database import get_db
-from app.schemas.rules import RuleCreate, RuleRead, RuleRefreshResponse, RuleUpdate
+from app.schemas.rules import RuleCreate, RuleListItem, RuleRead, RuleRefreshResponse, RuleUpdate
 from app.services.common import ServiceError, to_http_error
 from app.services.refresh_loop import refresh_loop_manager
 from app.services.rules import (
     create_rule,
     delete_rule,
     get_rule_or_404,
-    list_rules,
+    list_rules_summary,
     refresh_remote_rule,
     update_rule,
 )
@@ -23,10 +23,22 @@ router = APIRouter(
     dependencies=[Depends(require_admin_token)],
 )
 
-@router.get("", response_model=list[RuleRead])
-async def get_rules(db: AsyncSession = Depends(get_db)) -> list[RuleRead]:
-    rows = await list_rules(db)
-    return [RuleRead.model_validate(row) for row in rows]
+@router.get("", response_model=list[RuleListItem])
+async def get_rules(db: AsyncSession = Depends(get_db)) -> list[RuleListItem]:
+    rows = await list_rules_summary(db)
+    return [RuleListItem.model_validate(row) for row in rows]
+
+
+@router.get("/{rule_id}", response_model=RuleRead)
+async def get_rule(
+    rule_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> RuleRead:
+    try:
+        row = await get_rule_or_404(db, rule_id)
+        return RuleRead.model_validate(row)
+    except ServiceError as exc:
+        raise to_http_error(exc)
 
 
 @router.post("", response_model=RuleRead)

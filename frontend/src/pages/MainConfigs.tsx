@@ -17,8 +17,8 @@ import type { Breakpoint } from "antd";
 import type {
   MainConfig,
   PreviewResponse,
-  RuleSource,
-  SubscriptionSource,
+  RuleSourceListItem,
+  SubscriptionSourceListItem,
 } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import useIsMobile from "@/hooks/useIsMobile";
@@ -26,8 +26,8 @@ import useIsMobile from "@/hooks/useIsMobile";
 export default function MainConfigsPage() {
   const isMobile = useIsMobile();
   const [items, setItems] = useState<MainConfig[]>([]);
-  const [subscriptions, setSubscriptions] = useState<SubscriptionSource[]>([]);
-  const [rules, setRules] = useState<RuleSource[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionSourceListItem[]>([]);
+  const [rules, setRules] = useState<RuleSourceListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MainConfig | null>(null);
@@ -42,8 +42,8 @@ export default function MainConfigsPage() {
     try {
       const [configsResponse, subscriptionsResponse, rulesResponse] = await Promise.all([
         api.get<MainConfig[]>("/admin/main-configs"),
-        api.get<SubscriptionSource[]>("/admin/subscriptions"),
-        api.get<RuleSource[]>("/admin/rules"),
+        api.get<SubscriptionSourceListItem[]>("/admin/subscriptions"),
+        api.get<RuleSourceListItem[]>("/admin/rules"),
       ]);
 
       setItems(configsResponse.data);

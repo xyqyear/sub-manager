@@ -18,7 +18,7 @@ import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlin
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
 import type { Breakpoint } from "antd";
-import type { RuleSource } from "@/types/api";
+import type { RuleSource, RuleSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
@@ -58,10 +58,10 @@ function linesTextToArray(text: string | undefined): string[] {
 
 export default function RulesPage() {
   const isMobile = useIsMobile();
-  const [items, setItems] = useState<RuleSource[]>([]);
+  const [items, setItems] = useState<RuleSourceListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<RuleSource | null>(null);
+  const [editing, setEditing] = useState<RuleSourceListItem | null>(null);
   const [form] = Form.useForm<RuleFormValues>();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState("");
@@ -99,7 +99,7 @@ export default function RulesPage() {
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const response = await api.get<RuleSource[]>("/admin/rules");
+      const response = await api.get<RuleSourceListItem[]>("/admin/rules");
       setItems(response.data);
     } catch (error) {
       void message.error(errorDetail(error));
@@ -118,7 +118,28 @@ export default function RulesPage() {
     setOpen(true);
   };
 
-  const openEdit = (item: RuleSource) => {
+  const openEdit = async (item: RuleSourceListItem) => {
+    if (item.mode === "manual") {
+      try {
+        const response = await api.get<RuleSource>(`/admin/rules/${item.id}`);
+        const full = response.data;
+        setEditing(item);
+        form.setFieldsValue({
+          name: full.name,
+          mode: full.mode,
+          behavior: full.behavior,
+          enabled: full.enabled,
+          remote_url: full.remote_url ?? "",
+          auto_update: full.auto_update,
+          update_interval_sec: full.update_interval_sec,
+          payload_lines_text: (full.cached_payload_lines_json ?? []).join("\n"),
+        });
+        setOpen(true);
+      } catch (error) {
+        void message.error(errorDetail(error));
+      }
+      return;
+    }
     setEditing(item);
     form.setFieldsValue({
       name: item.name,
@@ -128,12 +149,12 @@ export default function RulesPage() {
       remote_url: item.remote_url ?? "",
       auto_update: item.auto_update,
       update_interval_sec: item.update_interval_sec,
-      payload_lines_text: (item.cached_payload_lines_json ?? []).join("\n"),
+      payload_lines_text: "",
     });
     setOpen(true);
   };
 
-  const handleDelete = async (item: RuleSource) => {
+  const handleDelete = async (item: RuleSourceListItem) => {
     try {
       await api.delete(`/admin/rules/${item.id}`);
       void message.success("Deleted");
@@ -143,7 +164,7 @@ export default function RulesPage() {
     }
   };
 
-  const handleRefresh = async (item: RuleSource) => {
+  const handleRefresh = async (item: RuleSourceListItem) => {
     try {
       await api.post(`/admin/rules/${item.id}/refresh`);
       void message.success("Refreshed");
@@ -153,20 +174,35 @@ export default function RulesPage() {
     }
   };
 
-  const hasCachedPayload = (item: RuleSource) =>
-    item.cached_payload_lines_json != null && item.cached_payload_lines_json.length > 0;
+  const hasCachedPayload = (item: RuleSourceListItem) =>
+    item.cached_payload_lines_count != null && item.cached_payload_lines_count > 0;
 
   const payloadToText = (item: RuleSource) =>
     yaml.dump({ payload: item.cached_payload_lines_json }, { lineWidth: -1 });
 
-  const openPreview = (item: RuleSource) => {
-    setPreviewContent(payloadToText(item));
-    setPreviewTitle(`${item.name} — Rules`);
-    setPreviewOpen(true);
+  const fetchFullItem = async (id: string): Promise<RuleSource> => {
+    const response = await api.get<RuleSource>(`/admin/rules/${id}`);
+    return response.data;
   };
 
-  const handleDownload = (item: RuleSource) => {
-    downloadTextFile(payloadToText(item), `${item.name}_rules.yaml`, "application/x-yaml");
+  const openPreview = async (item: RuleSourceListItem) => {
+    try {
+      const full = await fetchFullItem(item.id);
+      setPreviewContent(payloadToText(full));
+      setPreviewTitle(`${item.name} — Rules`);
+      setPreviewOpen(true);
+    } catch (error) {
+      void message.error(errorDetail(error));
+    }
+  };
+
+  const handleDownload = async (item: RuleSourceListItem) => {
+    try {
+      const full = await fetchFullItem(item.id);
+      downloadTextFile(payloadToText(full), `${item.name}_rules.yaml`, "application/x-yaml");
+    } catch (error) {
+      void message.error(errorDetail(error));
+    }
   };
 
   const handleSubmit = async () => {
@@ -250,7 +286,7 @@ export default function RulesPage() {
       title: "Last Refresh",
       key: "last_refresh_at",
       responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: RuleSource) =>
+      render: (_: unknown, row: RuleSourceListItem) =>
         row.last_refresh_at ? (
           <Tooltip title={new Date(row.last_refresh_at).toLocaleString()}>
             <Typography.Text type="secondary">{formatRelativeTime(row.last_refresh_at)}</Typography.Text>
@@ -263,7 +299,7 @@ export default function RulesPage() {
       title: "Next Refresh",
       key: "next_refresh_at",
       responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: RuleSource) =>
+      render: (_: unknown, row: RuleSourceListItem) =>
         row.next_refresh_at ? (
           <Tooltip title={new Date(row.next_refresh_at).toLocaleString()}>
             <Typography.Text type="secondary">{formatRelativeTime(row.next_refresh_at)}</Typography.Text>
@@ -275,19 +311,19 @@ export default function RulesPage() {
     {
       title: "Actions",
       key: "actions",
-      render: (_: unknown, row: RuleSource) => (
+      render: (_: unknown, row: RuleSourceListItem) => (
         <Space>
           <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
+            <Button size="small" icon={<EditOutlined />} onClick={() => void openEdit(row)} />
           </Tooltip>
           <Tooltip title="Refresh">
             <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(row)} />
           </Tooltip>
           <Tooltip title="Preview">
-            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedPayload(row)} onClick={() => openPreview(row)} />
+            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedPayload(row)} onClick={() => void openPreview(row)} />
           </Tooltip>
           <Tooltip title="Download">
-            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedPayload(row)} onClick={() => handleDownload(row)} />
+            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedPayload(row)} onClick={() => void handleDownload(row)} />
           </Tooltip>
           <Popconfirm title="Delete rule?" onConfirm={() => void handleDelete(row)}>
             <Tooltip title="Delete">
@@ -310,7 +346,7 @@ export default function RulesPage() {
         </Tooltip>
       </Space>
 
-      <Table<RuleSource>
+      <Table<RuleSourceListItem>
         rowKey="id"
         loading={loading}
         dataSource={items}

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from ipaddress import ip_network
+from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
@@ -210,6 +211,20 @@ async def get_rule_or_404(db: AsyncSession, rule_id: str) -> RuleSource:
 async def list_rules(db: AsyncSession) -> list[RuleSource]:
     result = await db.execute(select(RuleSource).order_by(RuleSource.created_at.desc()))
     return list(result.scalars().all())
+
+
+async def list_rules_summary(db: AsyncSession) -> list[dict[str, Any]]:
+    R = RuleSource
+    cols = [
+        R.id, R.name, R.mode, R.behavior, R.enabled,
+        R.remote_url, R.auto_update, R.update_interval_sec,
+        R.next_refresh_at, R.last_refresh_at,
+        R.last_status, R.last_error,
+        func.json_array_length(R.cached_payload_lines_json).label("cached_payload_lines_count"),
+        R.created_at, R.updated_at,
+    ]
+    result = await db.execute(select(*cols).order_by(R.created_at.desc()))
+    return [row._asdict() for row in result.all()]
 
 
 async def delete_rule(db: AsyncSession, source: RuleSource) -> None:

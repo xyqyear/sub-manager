@@ -27,8 +27,8 @@ import type {
   GroupMode,
   MainConfig,
   PreviewResponse,
-  RuleSource,
-  SubscriptionSource,
+  RuleSourceListItem,
+  SubscriptionSourceListItem,
 } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import useIsMobile from "@/hooks/useIsMobile";
@@ -42,8 +42,8 @@ interface MainConfigEditorDrawerProps {
   open: boolean;
   config: MainConfig | null;
   mode: EditorMode;
-  subscriptions: SubscriptionSource[];
-  rules: RuleSource[];
+  subscriptions: SubscriptionSourceListItem[];
+  rules: RuleSourceListItem[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }
@@ -118,7 +118,7 @@ function MoveControls({ index, total, onMove }: MoveControlsProps) {
   );
 }
 
-function normalizeGroupFields(values: EditorFormValues, rules: RuleSource[]): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "route_bindings"> {
+function normalizeGroupFields(values: EditorFormValues, rules: RuleSourceListItem[]): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "route_bindings"> {
   return {
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,

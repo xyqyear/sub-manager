@@ -22,6 +22,26 @@ export interface SubscriptionSource {
   updated_at: string;
 }
 
+export interface SubscriptionSourceListItem {
+  id: string;
+  name: string;
+  mode: SubscriptionMode;
+  enabled: boolean;
+  remote_url: string | null;
+  remote_auth_header: string | null;
+  auto_update: boolean;
+  update_interval_sec: number;
+  next_refresh_at: string | null;
+  last_refresh_at: string | null;
+  last_status: string;
+  last_error: string | null;
+  subscription_userinfo_raw: string | null;
+  subscription_userinfo_json: Record<string, number> | null;
+  cached_proxies_count: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RuleSource {
   id: string;
   name: string;
@@ -36,6 +56,24 @@ export interface RuleSource {
   last_status: string;
   last_error: string | null;
   cached_payload_lines_json: string[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuleSourceListItem {
+  id: string;
+  name: string;
+  mode: SubscriptionMode;
+  behavior: RuleBehavior;
+  enabled: boolean;
+  remote_url: string | null;
+  auto_update: boolean;
+  update_interval_sec: number;
+  next_refresh_at: string | null;
+  last_refresh_at: string | null;
+  last_status: string;
+  last_error: string | null;
+  cached_payload_lines_count: number | null;
   created_at: string;
   updated_at: string;
 }

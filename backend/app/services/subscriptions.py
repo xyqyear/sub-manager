@@ -4,7 +4,7 @@ import copy
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
@@ -233,6 +233,22 @@ async def get_subscription_or_404(db: AsyncSession, subscription_id: str) -> Sub
 async def list_subscriptions(db: AsyncSession) -> list[SubscriptionSource]:
     result = await db.execute(select(SubscriptionSource).order_by(SubscriptionSource.created_at.desc()))
     return list(result.scalars().all())
+
+
+async def list_subscriptions_summary(db: AsyncSession) -> list[dict[str, Any]]:
+    S = SubscriptionSource
+    cols = [
+        S.id, S.name, S.mode, S.enabled,
+        S.remote_url, S.remote_auth_header,
+        S.auto_update, S.update_interval_sec,
+        S.next_refresh_at, S.last_refresh_at,
+        S.last_status, S.last_error,
+        S.subscription_userinfo_raw, S.subscription_userinfo_json,
+        func.json_array_length(S.cached_proxies_json).label("cached_proxies_count"),
+        S.created_at, S.updated_at,
+    ]
+    result = await db.execute(select(*cols).order_by(S.created_at.desc()))
+    return [row._asdict() for row in result.all()]
 
 
 async def delete_subscription(db: AsyncSession, source: SubscriptionSource) -> None:

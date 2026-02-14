@@ -7,6 +7,7 @@ from app.auth import require_admin_token
 from app.db.database import get_db
 from app.schemas.subscriptions import (
     SubscriptionCreate,
+    SubscriptionListItem,
     SubscriptionRead,
     SubscriptionRefreshResponse,
     SubscriptionUpdate,
@@ -17,7 +18,7 @@ from app.services.subscriptions import (
     create_subscription,
     delete_subscription,
     get_subscription_or_404,
-    list_subscriptions,
+    list_subscriptions_summary,
     refresh_remote_subscription,
     update_subscription,
 )
@@ -28,10 +29,22 @@ router = APIRouter(
     dependencies=[Depends(require_admin_token)],
 )
 
-@router.get("", response_model=list[SubscriptionRead])
-async def get_subscriptions(db: AsyncSession = Depends(get_db)) -> list[SubscriptionRead]:
-    rows = await list_subscriptions(db)
-    return [SubscriptionRead.model_validate(row) for row in rows]
+@router.get("", response_model=list[SubscriptionListItem])
+async def get_subscriptions(db: AsyncSession = Depends(get_db)) -> list[SubscriptionListItem]:
+    rows = await list_subscriptions_summary(db)
+    return [SubscriptionListItem.model_validate(row) for row in rows]
+
+
+@router.get("/{subscription_id}", response_model=SubscriptionRead)
+async def get_subscription(
+    subscription_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SubscriptionRead:
+    try:
+        source = await get_subscription_or_404(db, subscription_id)
+        return SubscriptionRead.model_validate(source)
+    except ServiceError as exc:
+        raise to_http_error(exc)
 
 
 @router.post("", response_model=SubscriptionRead)

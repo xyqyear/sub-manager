@@ -19,7 +19,7 @@ import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlin
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
 import type { Breakpoint } from "antd";
-import type { SubscriptionSource } from "@/types/api";
+import type { SubscriptionSource, SubscriptionSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import { formatBytes, TRAFFIC_COLORS } from "@/utils/format";
 import { formatRelativeTime } from "@/utils/time";
@@ -50,10 +50,10 @@ const defaultFormValues: SubscriptionFormValues = {
 
 export default function SubscriptionsPage() {
   const isMobile = useIsMobile();
-  const [items, setItems] = useState<SubscriptionSource[]>([]);
+  const [items, setItems] = useState<SubscriptionSourceListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<SubscriptionSource | null>(null);
+  const [editing, setEditing] = useState<SubscriptionSourceListItem | null>(null);
   const [form] = Form.useForm<SubscriptionFormValues>();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState("");
@@ -64,7 +64,7 @@ export default function SubscriptionsPage() {
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const response = await api.get<SubscriptionSource[]>("/admin/subscriptions");
+      const response = await api.get<SubscriptionSourceListItem[]>("/admin/subscriptions");
       setItems(response.data);
     } catch (error) {
       void message.error(errorDetail(error));
@@ -83,7 +83,7 @@ export default function SubscriptionsPage() {
     setOpen(true);
   };
 
-  const openEdit = (item: SubscriptionSource) => {
+  const openEdit = (item: SubscriptionSourceListItem) => {
     setEditing(item);
     form.setFieldsValue({
       name: item.name,
@@ -98,7 +98,7 @@ export default function SubscriptionsPage() {
     setOpen(true);
   };
 
-  const handleDelete = async (item: SubscriptionSource) => {
+  const handleDelete = async (item: SubscriptionSourceListItem) => {
     try {
       await api.delete(`/admin/subscriptions/${item.id}`);
       void message.success("Deleted");
@@ -108,7 +108,7 @@ export default function SubscriptionsPage() {
     }
   };
 
-  const handleRefresh = async (item: SubscriptionSource) => {
+  const handleRefresh = async (item: SubscriptionSourceListItem) => {
     try {
       await api.post(`/admin/subscriptions/${item.id}/refresh`);
       void message.success("Refreshed");
@@ -118,20 +118,35 @@ export default function SubscriptionsPage() {
     }
   };
 
-  const hasCachedProxies = (item: SubscriptionSource) =>
-    item.cached_proxies_json != null && item.cached_proxies_json.length > 0;
+  const hasCachedProxies = (item: SubscriptionSourceListItem) =>
+    item.cached_proxies_count != null && item.cached_proxies_count > 0;
 
   const proxiesToYaml = (item: SubscriptionSource) =>
     yaml.dump(item.cached_proxies_json, { lineWidth: -1 });
 
-  const openPreview = (item: SubscriptionSource) => {
-    setPreviewContent(proxiesToYaml(item));
-    setPreviewTitle(`${item.name} — Proxies`);
-    setPreviewOpen(true);
+  const fetchFullItem = async (id: string): Promise<SubscriptionSource> => {
+    const response = await api.get<SubscriptionSource>(`/admin/subscriptions/${id}`);
+    return response.data;
   };
 
-  const handleDownload = (item: SubscriptionSource) => {
-    downloadTextFile(proxiesToYaml(item), `${item.name}_proxies.yaml`, "application/x-yaml");
+  const openPreview = async (item: SubscriptionSourceListItem) => {
+    try {
+      const full = await fetchFullItem(item.id);
+      setPreviewContent(proxiesToYaml(full));
+      setPreviewTitle(`${item.name} — Proxies`);
+      setPreviewOpen(true);
+    } catch (error) {
+      void message.error(errorDetail(error));
+    }
+  };
+
+  const handleDownload = async (item: SubscriptionSourceListItem) => {
+    try {
+      const full = await fetchFullItem(item.id);
+      downloadTextFile(proxiesToYaml(full), `${item.name}_proxies.yaml`, "application/x-yaml");
+    } catch (error) {
+      void message.error(errorDetail(error));
+    }
   };
 
   const handleSubmit = async () => {
@@ -194,7 +209,7 @@ export default function SubscriptionsPage() {
       title: "Last Refresh",
       key: "last_refresh_at",
       responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: SubscriptionSource) =>
+      render: (_: unknown, row: SubscriptionSourceListItem) =>
         row.last_refresh_at ? (
           <Tooltip title={new Date(row.last_refresh_at).toLocaleString()}>
             <Typography.Text type="secondary">{formatRelativeTime(row.last_refresh_at)}</Typography.Text>
@@ -207,7 +222,7 @@ export default function SubscriptionsPage() {
       title: "Next Refresh",
       key: "next_refresh_at",
       responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: SubscriptionSource) =>
+      render: (_: unknown, row: SubscriptionSourceListItem) =>
         row.next_refresh_at ? (
           <Tooltip title={new Date(row.next_refresh_at).toLocaleString()}>
             <Typography.Text type="secondary">{formatRelativeTime(row.next_refresh_at)}</Typography.Text>
@@ -221,7 +236,7 @@ export default function SubscriptionsPage() {
       key: "traffic",
       width: 280,
       responsive: ["lg"] as Breakpoint[],
-      render: (_: unknown, row: SubscriptionSource) => {
+      render: (_: unknown, row: SubscriptionSourceListItem) => {
         const info = row.subscription_userinfo_json;
         if (!info || !info.total) return <Typography.Text type="secondary">-</Typography.Text>;
 
@@ -259,7 +274,7 @@ export default function SubscriptionsPage() {
     {
       title: "Actions",
       key: "actions",
-      render: (_: unknown, row: SubscriptionSource) => (
+      render: (_: unknown, row: SubscriptionSourceListItem) => (
         <Space>
           <Tooltip title="Edit">
             <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
@@ -268,10 +283,10 @@ export default function SubscriptionsPage() {
             <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(row)} />
           </Tooltip>
           <Tooltip title="Preview">
-            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedProxies(row)} onClick={() => openPreview(row)} />
+            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedProxies(row)} onClick={() => void openPreview(row)} />
           </Tooltip>
           <Tooltip title="Download">
-            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedProxies(row)} onClick={() => handleDownload(row)} />
+            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedProxies(row)} onClick={() => void handleDownload(row)} />
           </Tooltip>
           <Popconfirm
             title="Delete subscription?"
@@ -297,7 +312,7 @@ export default function SubscriptionsPage() {
         </Tooltip>
       </Space>
 
-      <Table<SubscriptionSource>
+      <Table<SubscriptionSourceListItem>
         rowKey="id"
         loading={loading}
         dataSource={items}
