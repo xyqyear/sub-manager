@@ -365,6 +365,10 @@ export default function MainConfigEditorDrawer({
       await onSaved();
       onClose();
     } catch (error) {
+      if (error && typeof error === "object" && "errorFields" in error) {
+        void message.error("Please fill in all required fields");
+        return;
+      }
       void message.error(errorDetail(error));
     } finally {
       setSaving(false);
