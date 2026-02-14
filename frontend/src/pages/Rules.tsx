@@ -186,14 +186,33 @@ export default function RulesPage() {
         payload.payload_lines = linesTextToArray(values.payload_lines_text);
       }
 
+      let savedId: string | null = null;
+      let needsRefresh = false;
+
       if (editing) {
         await api.put(`/admin/rules/${editing.id}`, payload);
+        savedId = editing.id;
+        needsRefresh = values.mode === "remote" && values.remote_url !== editing.remote_url;
       } else {
-        await api.post("/admin/rules", payload);
+        const res = await api.post<RuleSource>("/admin/rules", payload);
+        savedId = res.data.id;
+        needsRefresh = values.mode === "remote";
       }
+
       setOpen(false);
       await fetchItems();
-      void message.success(editing ? "Updated" : "Created");
+
+      if (needsRefresh && savedId) {
+        try {
+          await api.post(`/admin/rules/${savedId}/refresh`);
+          await fetchItems();
+          void message.success(editing ? "Updated & refreshed" : "Created & refreshed");
+        } catch (refreshError) {
+          void message.warning(`${editing ? "Updated" : "Created"}, but refresh failed: ${errorDetail(refreshError)}`);
+        }
+      } else {
+        void message.success(editing ? "Updated" : "Created");
+      }
     } catch (error) {
       void message.error(errorDetail(error));
     }

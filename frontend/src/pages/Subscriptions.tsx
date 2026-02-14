@@ -137,14 +137,33 @@ export default function SubscriptionsPage() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      let savedId: string | null = null;
+      let needsRefresh = false;
+
       if (editing) {
         await api.put(`/admin/subscriptions/${editing.id}`, values);
+        savedId = editing.id;
+        needsRefresh = values.mode === "remote" && values.remote_url !== editing.remote_url;
       } else {
-        await api.post("/admin/subscriptions", values);
+        const res = await api.post<SubscriptionSource>("/admin/subscriptions", values);
+        savedId = res.data.id;
+        needsRefresh = values.mode === "remote";
       }
+
       setOpen(false);
       await fetchItems();
-      void message.success(editing ? "Updated" : "Created");
+
+      if (needsRefresh && savedId) {
+        try {
+          await api.post(`/admin/subscriptions/${savedId}/refresh`);
+          await fetchItems();
+          void message.success(editing ? "Updated & refreshed" : "Created & refreshed");
+        } catch (refreshError) {
+          void message.warning(`${editing ? "Updated" : "Created"}, but refresh failed: ${errorDetail(refreshError)}`);
+        }
+      } else {
+        void message.success(editing ? "Updated" : "Created");
+      }
     } catch (error) {
       void message.error(errorDetail(error));
     }
