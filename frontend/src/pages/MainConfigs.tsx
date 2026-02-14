@@ -10,7 +10,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { BlockOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import MainConfigEditorDrawer from "@/pages/main-configs/MainConfigEditorDrawer";
 import type { Breakpoint } from "antd";
@@ -31,6 +31,7 @@ export default function MainConfigsPage() {
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MainConfig | null>(null);
+  const [editorMode, setEditorMode] = useState<"create" | "edit" | "duplicate">("create");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewYaml, setPreviewYaml] = useState("");
   const [previewDiagnostics, setPreviewDiagnostics] =
@@ -61,11 +62,19 @@ export default function MainConfigsPage() {
 
   const openCreate = () => {
     setEditing(null);
+    setEditorMode("create");
     setEditorOpen(true);
   };
 
   const openEdit = (item: MainConfig) => {
     setEditing(item);
+    setEditorMode("edit");
+    setEditorOpen(true);
+  };
+
+  const openDuplicate = (item: MainConfig) => {
+    setEditing(item);
+    setEditorMode("duplicate");
     setEditorOpen(true);
   };
 
@@ -140,6 +149,9 @@ export default function MainConfigsPage() {
           <Tooltip title="Edit">
             <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
           </Tooltip>
+          <Tooltip title="Duplicate">
+            <Button size="small" icon={<BlockOutlined />} onClick={() => openDuplicate(row)} />
+          </Tooltip>
           <Tooltip title="Preview">
             <Button size="small" icon={<EyeOutlined />} onClick={() => void handlePreview(row)} />
           </Tooltip>
@@ -179,6 +191,7 @@ export default function MainConfigsPage() {
       <MainConfigEditorDrawer
         open={editorOpen}
         config={editing}
+        mode={editorMode}
         subscriptions={subscriptions}
         rules={rules}
         onClose={closeEditor}

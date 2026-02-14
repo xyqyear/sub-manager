@@ -36,9 +36,12 @@ import useIsMobile from "@/hooks/useIsMobile";
 type FinalTargetType = "DIRECT" | "REJECT" | "group";
 type ManualMemberType = "filtered_group" | "manual_group";
 
+type EditorMode = "create" | "edit" | "duplicate";
+
 interface MainConfigEditorDrawerProps {
   open: boolean;
   config: MainConfig | null;
+  mode: EditorMode;
   subscriptions: SubscriptionSource[];
   rules: RuleSource[];
   onClose: () => void;
@@ -160,6 +163,7 @@ function normalizeGroupFields(values: EditorFormValues, rules: RuleSource[]): Pi
 export default function MainConfigEditorDrawer({
   open,
   config,
+  mode,
   subscriptions,
   rules,
   onClose,
@@ -291,7 +295,7 @@ export default function MainConfigEditorDrawer({
       form.resetFields();
       const nextValues: EditorFormValues = {
         ...defaultValues,
-        name: config.name,
+        name: mode === "duplicate" ? `${config.name} (Copy)` : config.name,
         base_config_yaml: config.base_config_yaml,
         enabled: config.enabled,
         final_target_type: config.final_target_type,
@@ -306,7 +310,7 @@ export default function MainConfigEditorDrawer({
     };
 
     void init();
-  }, [config, form, open, queueFilteredGroupPreview]);
+  }, [config, mode, form, open, queueFilteredGroupPreview]);
 
   const handlePreview = async () => {
     try {
@@ -355,13 +359,13 @@ export default function MainConfigEditorDrawer({
         ...groupFields,
       };
 
-      if (config) {
+      if (mode === "edit" && config) {
         await api.put<MainConfig>(`/admin/main-configs/${config.id}`, payload);
       } else {
         await api.post<MainConfig>("/admin/main-configs", payload);
       }
 
-      void message.success(config ? "Main config updated" : "Main config created");
+      void message.success(mode === "edit" ? "Main config updated" : "Main config created");
       await onSaved();
       onClose();
     } catch (error) {
@@ -377,7 +381,7 @@ export default function MainConfigEditorDrawer({
 
   return (
     <Drawer
-      title={config ? `Edit ${config.name}` : "Create Main Config"}
+      title={mode === "edit" ? `Edit ${config?.name}` : mode === "duplicate" ? "Duplicate Main Config" : "Create Main Config"}
       open={open}
       onClose={onClose}
       width={isMobile ? "100%" : 1200}
