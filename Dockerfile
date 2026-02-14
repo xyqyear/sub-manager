@@ -28,6 +28,7 @@ WORKDIR /app
 ENV VIRTUAL_ENV=/app/backend/.venv
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 ENV PYTHONUNBUFFERED=1
+ENV DATABASE_URL=sqlite+aiosqlite:///./data/db.sqlite3
 
 RUN apk add --no-cache libffi libgcc libstdc++
 

@@ -8,5 +8,4 @@ services:
       - ./data:/app/backend/data
     environment:
       - ADMIN_TOKEN=${ADMIN_TOKEN:?set ADMIN_TOKEN}
-      - DATABASE_URL=sqlite+aiosqlite:///./data/db.sqlite3
     restart: unless-stopped
