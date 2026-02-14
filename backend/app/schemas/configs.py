@@ -22,7 +22,7 @@ class MainConfigCreate(BaseModel):
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
-    shunt_bindings: list[ShuntBindingPayload] = []
+    route_bindings: list[RouteBindingPayload] = []
 
 
 class MainConfigUpdate(BaseModel):
@@ -35,7 +35,7 @@ class MainConfigUpdate(BaseModel):
     filtered_groups: list[FilteredGroupPayload] | None = None
     manual_groups: list[ManualGroupPayload] | None = None
     dialer_override_rules: list[DialerOverridePayload] | None = None
-    shunt_bindings: list[ShuntBindingPayload] | None = None
+    route_bindings: list[RouteBindingPayload] | None = None
 
 
 class MainConfigRead(BaseModel):
@@ -51,7 +51,7 @@ class MainConfigRead(BaseModel):
     filtered_groups: list[FilteredGroupPayload]
     manual_groups: list[ManualGroupPayload]
     dialer_override_rules: list[DialerOverridePayload]
-    shunt_bindings: list[ShuntBindingPayload]
+    route_bindings: list[RouteBindingPayload]
     created_at: UtcDatetime
     updated_at: UtcDatetime
 
@@ -93,7 +93,7 @@ class DialerOverridePayload(BaseModel):
     dialer_group_name: str
 
 
-class ShuntBindingPayload(BaseModel):
+class RouteBindingPayload(BaseModel):
     position: int
     binding_name: str
     rule_source_id: str
@@ -152,4 +152,4 @@ class DraftPreviewRequest(BaseModel):
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
-    shunt_bindings: list[ShuntBindingPayload] = []
+    route_bindings: list[RouteBindingPayload] = []

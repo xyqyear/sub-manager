@@ -133,10 +133,10 @@ async def test_generation_flow_manual_sources(client, admin_headers):
                 }
             ],
             "dialer_override_rules": [],
-            "shunt_bindings": [
+            "route_bindings": [
                 {
                     "position": 1,
-                    "binding_name": "SHUNT-1",
+                    "binding_name": "ROUTE-1",
                     "rule_source_id": rule_id,
                     "default_group_name": "FG-A",
                     "no_resolve": False,
@@ -149,7 +149,7 @@ async def test_generation_flow_manual_sources(client, admin_headers):
     config_id = config_data["id"]
 
     assert len(config_data["filtered_groups"]) == 1
-    assert len(config_data["shunt_bindings"]) == 1
+    assert len(config_data["route_bindings"]) == 1
 
     artifact_response = await client.get(
         f"/api/public/configs/{config_id}/artifact",
@@ -244,7 +244,7 @@ async def test_copy_nodes_isolates_dialer_override(client, admin_headers):
                     "dialer_group_name": "Direct",
                 }
             ],
-            "shunt_bindings": [
+            "route_bindings": [
                 {
                     "position": 1,
                     "binding_name": "Test",

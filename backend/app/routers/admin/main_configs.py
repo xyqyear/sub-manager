@@ -76,9 +76,9 @@ async def preview_draft_endpoint(
         validate_base_yaml(payload.base_config_yaml)
         validate_builder_shapes(
             payload.filtered_groups, payload.manual_groups,
-            payload.dialer_override_rules, payload.shunt_bindings,
+            payload.dialer_override_rules, payload.route_bindings,
         )
-        await validate_builder_refs(db, payload.filtered_groups, payload.shunt_bindings)
+        await validate_builder_refs(db, payload.filtered_groups, payload.route_bindings)
         result = await generate_config_yaml(
             db,
             GenerationInput.from_draft(payload),

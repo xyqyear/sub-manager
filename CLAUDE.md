@@ -57,7 +57,7 @@ Each rule source has a behavior type: `classical` (full rule syntax), `domain` (
 
 This is where everything comes together. A main config has:
 - A base YAML (ports, DNS, TUN settings, etc. — everything except proxies, groups, and rules)
-- Four builder field groups (filtered groups, manual groups, dialer overrides, shunt bindings) that visually compose proxy groups and routing rules (see below)
+- Four builder field groups (filtered groups, manual groups, dialer overrides, route bindings) that visually compose proxy groups and routing rules (see below)
 - A password for public access
 
 ### The Builder
@@ -84,16 +84,16 @@ Assigns a `dialer-proxy` to all nodes in a filtered group, creating a relay chai
 - All nodes in "My VPS" group get `dialer-proxy: "US Transit"` → traffic goes: client → US Transit node → VPS node → destination
 - This hides the final destination from the transit provider and hides the transit from the destination
 
-**Shunt Bindings** — "Which rule goes to which group"
+**Route Bindings** — "Which rule goes to which group"
 
 Each binding pairs a rule source with a proxy group name and a default target. Example:
 - Rule "Google" → group "Google", default to "Node Select"
 - Rule "Ad Block" → group "Ads", default to REJECT
 - Rule "China" → group "Domestic", default to DIRECT
 
-The order of shunt bindings determines rule matching priority in the generated config. A final implicit MATCH rule catches all remaining traffic, directed to DIRECT, REJECT, or a chosen group.
+The order of route bindings determines rule matching priority in the generated config. A final implicit MATCH rule catches all remaining traffic, directed to DIRECT, REJECT, or a chosen group.
 
-Each shunt binding generates a `select`-type proxy group whose members are: `[default_group, DIRECT, REJECT] + all manual groups + all filtered groups`, allowing the user to override the default at runtime in Clash Meta.
+Each route binding generates a `select`-type proxy group whose members are: `[default_group, DIRECT, REJECT] + all manual groups + all filtered groups`, allowing the user to override the default at runtime in Clash Meta.
 
 ### Output
 
@@ -197,7 +197,7 @@ Corresponds to Stage 3 (the composition layer). A main config combines subscript
 | `filtered_groups`      | `list[FilteredGroupPayload]` | Named proxy groups filtered by regex (each contains nested rules) |
 | `manual_groups`        | `list[ManualGroupPayload]`   | Named groups referencing filtered/manual groups (each contains nested members) |
 | `dialer_override_rules`| `list[DialerOverridePayload]`| Assigns `dialer-proxy` to proxies in a filtered group |
-| `shunt_bindings`       | `list[ShuntBindingPayload]`  | Binds a rule source to a shunt proxy-group |
+| `route_bindings`       | `list[RouteBindingPayload]`  | Binds a rule source to a route proxy-group |
 
 All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps. Lists are ordered by `position` field within the JSON arrays.
 
@@ -206,13 +206,13 @@ All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` t
 The generation pipeline uses a single `GenerationInput` model and `generate_config_yaml()` entry point for both saved configs and draft previews. Callers construct `GenerationInput` from either a `MainConfig` ORM object or a `DraftPreviewRequest` schema.
 
 1. **Fetch subscriptions** - `_fetch_subscriptions()` derives subscription IDs from filtered group rules (first-seen order), fetches `SubscriptionSource` rows from DB.
-2. **Fetch rule sources** - `_fetch_rule_sources()` fetches `RuleSource` rows referenced by shunt bindings.
+2. **Fetch rule sources** - `_fetch_rule_sources()` fetches `RuleSource` rows referenced by route bindings.
 3. **Load subscriptions** - Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
 4. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
 5. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
 6. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
 7. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
-8. **Shunt groups + rule-providers** - Each binding generates:
+8. **Route groups + rule-providers** - Each binding generates:
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
    - A `rule-providers` entry pointing to `{public_base_url}/api/public/configs/{id}/rules/{rule_id}.yaml?password=...`
    - A `RULE-SET,{provider_key},{binding_name}` rules line
@@ -220,7 +220,7 @@ The generation pipeline uses a single `GenerationInput` model and `generate_conf
 10. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
 11. **Merge** - Generated sections replace `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
 
-Proxy group order in output: filtered_groups -> manual_groups -> shunt_groups.
+Proxy group order in output: filtered_groups -> manual_groups -> route_groups.
 
 ## API Routes
 
@@ -269,7 +269,7 @@ MainConfig fields:
   filtered_groups: [{name, position, group_mode, test_url?, test_interval_sec?, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
   manual_groups: [{name, position, group_mode, test_url?, test_interval_sec?, members: [{member_type, member_ref, position}]}]
   dialer_override_rules: [{filtered_group_name, dialer_group_name}]
-  shunt_bindings: [{position, binding_name, rule_source_id, default_group_name, no_resolve}]
+  route_bindings: [{position, binding_name, rule_source_id, default_group_name, no_resolve}]
 
 # Draft preview (POST /api/admin/main-configs/preview-draft)
 DraftPreviewRequest:
@@ -281,7 +281,7 @@ DraftPreviewRequest:
   filtered_groups: list[FilteredGroupPayload]  # same shape as MainConfig fields
   manual_groups: list[ManualGroupPayload]
   dialer_override_rules: list[DialerOverridePayload]
-  shunt_bindings: list[ShuntBindingPayload]
+  route_bindings: list[RouteBindingPayload]
 
 # Preview response
 PreviewWithDiagnosticsResponse:
@@ -291,7 +291,7 @@ PreviewWithDiagnosticsResponse:
 # Generator input (internal, not an API schema)
 GenerationInput:
   config_id, base_config_yaml, password_plain, final_target_type, final_target_group_name
-  filtered_groups, manual_groups, dialer_override_rules, shunt_bindings
+  filtered_groups, manual_groups, dialer_override_rules, route_bindings
 
 # Type enums
 GroupMode: "select" | "fallback" | "url-test"

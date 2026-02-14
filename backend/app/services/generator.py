@@ -22,7 +22,7 @@ from app.schemas.configs import (
     DraftPreviewRequest,
     FilteredGroupPayload,
     ManualGroupPayload,
-    ShuntBindingPayload,
+    RouteBindingPayload,
 )
 from app.services.common import GenerationError, dedupe_keep_order, slugify_name, utc_now
 from app.services.refresh_loop import refresh_loop_manager
@@ -45,7 +45,7 @@ class GenerationInput(BaseModel):
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
-    shunt_bindings: list[ShuntBindingPayload] = []
+    route_bindings: list[RouteBindingPayload] = []
 
     @staticmethod
     def from_main_config(config: MainConfig) -> GenerationInput:
@@ -58,7 +58,7 @@ class GenerationInput(BaseModel):
             filtered_groups=config.filtered_groups,
             manual_groups=config.manual_groups,
             dialer_override_rules=config.dialer_override_rules,
-            shunt_bindings=config.shunt_bindings,
+            route_bindings=config.route_bindings,
         )
 
     @staticmethod
@@ -72,7 +72,7 @@ class GenerationInput(BaseModel):
             filtered_groups=draft.filtered_groups,
             manual_groups=draft.manual_groups,
             dialer_override_rules=draft.dialer_override_rules,
-            shunt_bindings=draft.shunt_bindings,
+            route_bindings=draft.route_bindings,
         )
 
 
@@ -230,9 +230,9 @@ async def _fetch_subscriptions(
 
 async def _fetch_rule_sources(
     db: AsyncSession,
-    shunt_bindings: list[ShuntBindingPayload],
+    route_bindings: list[RouteBindingPayload],
 ) -> dict[str, RuleSource]:
-    rule_ids = [sb.rule_source_id for sb in shunt_bindings]
+    rule_ids = [rb.rule_source_id for rb in route_bindings]
     if not rule_ids:
         return {}
     result = await db.execute(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
@@ -244,7 +244,7 @@ async def generate_config_yaml(
     source: GenerationInput,
 ) -> GenerationResult:
     sub_ids_ordered, sub_map = await _fetch_subscriptions(db, source.filtered_groups)
-    rule_map = await _fetch_rule_sources(db, source.shunt_bindings)
+    rule_map = await _fetch_rule_sources(db, source.route_bindings)
 
     diagnostics = GenerationDiagnosticsData(
         stale_subscription_ids=[],
@@ -359,12 +359,12 @@ async def generate_config_yaml(
 
     group_names_filtered = [fg.name for fg in sorted_fg]
     group_names_manual = [mg.name for mg in sorted_mg]
-    available_non_shunt_groups = set(group_names_filtered + group_names_manual)
+    available_non_route_groups = set(group_names_filtered + group_names_manual)
 
     proxy_by_name = {str(p.get("name", "")): p for p in pool_result.proxy_pool}
     matched_dialer_proxy_names: set[str] = set()
     for rule in source.dialer_override_rules:
-        if rule.dialer_group_name not in available_non_shunt_groups:
+        if rule.dialer_group_name not in available_non_route_groups:
             raise GenerationError(f"dialer group not found: {rule.dialer_group_name}", 422)
         if rule.filtered_group_name not in filtered_group_members:
             raise GenerationError(
@@ -377,15 +377,15 @@ async def generate_config_yaml(
                     proxy["dialer-proxy"] = rule.dialer_group_name
                     matched_dialer_proxy_names.add(proxy_name)
 
-    generated_shunt_groups: list[ProxyGroupObj] = []
+    generated_route_groups: list[ProxyGroupObj] = []
     rule_providers: dict[str, RuleProviderObj] = {}
     rules: list[str] = []
     provider_keys_used: set[str] = set()
     config_id_for_url = source.config_id or "__UNSAVED__"
 
-    for idx, binding in enumerate(sorted(source.shunt_bindings, key=lambda s: s.position), start=1):
-        if binding.default_group_name not in available_non_shunt_groups | {"DIRECT", "REJECT"}:
-            raise GenerationError(f"shunt default group not found: {binding.default_group_name}", 422)
+    for idx, binding in enumerate(sorted(source.route_bindings, key=lambda s: s.position), start=1):
+        if binding.default_group_name not in available_non_route_groups | {"DIRECT", "REJECT"}:
+            raise GenerationError(f"route default group not found: {binding.default_group_name}", 422)
 
         rule_source = rule_map.get(binding.rule_source_id)
         if rule_source is None:
@@ -399,14 +399,14 @@ async def generate_config_yaml(
             diagnostics.stale_rule_ids.append(rule_source.id)
             await refresh_loop_manager.enqueue_rule_refresh(rule_source.id)
 
-        shunt_group_members = dedupe_keep_order(
+        route_group_members = dedupe_keep_order(
             [binding.default_group_name, "DIRECT"]
             + group_names_manual
             + group_names_filtered
             + ["REJECT"]
         )
-        generated_shunt_groups.append(
-            ProxyGroupObj(name=binding.binding_name, type="select", proxies=shunt_group_members)
+        generated_route_groups.append(
+            ProxyGroupObj(name=binding.binding_name, type="select", proxies=route_group_members)
         )
 
         key_base = slugify_name(binding.binding_name).replace("-", "_")
@@ -441,7 +441,7 @@ async def generate_config_yaml(
     if source.final_target_type == "group":
         if not source.final_target_group_name:
             raise GenerationError("final target group is required", 422)
-        if source.final_target_group_name not in available_non_shunt_groups:
+        if source.final_target_group_name not in available_non_route_groups:
             raise GenerationError(f"final target group not found: {source.final_target_group_name}", 422)
         final_target = source.final_target_group_name
     elif source.final_target_type in {"DIRECT", "REJECT"}:
@@ -451,7 +451,7 @@ async def generate_config_yaml(
 
     rules.append(f"MATCH,{final_target}")
 
-    generated_proxy_groups = generated_filtered_groups + generated_manual_groups + generated_shunt_groups
+    generated_proxy_groups = generated_filtered_groups + generated_manual_groups + generated_route_groups
     generated_proxy_group_dicts = [g.model_dump(exclude_none=True) for g in generated_proxy_groups]
 
     all_group_names = {group.name for group in generated_proxy_groups}

@@ -52,7 +52,7 @@ type EditorFormValues = {
   enabled: boolean;
   final_target_type: FinalTargetType;
   final_target_group_name?: string;
-} & Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "shunt_bindings">;
+} & Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "route_bindings">;
 
 const DEFAULT_BASE_YAML = "mixed-port: 7890\nmode: rule\n";
 
@@ -66,7 +66,7 @@ const defaultValues: EditorFormValues = {
   filtered_groups: [],
   manual_groups: [],
   dialer_override_rules: [],
-  shunt_bindings: [],
+  route_bindings: [],
 };
 
 const groupModeOptions: { label: string; value: GroupMode }[] = [
@@ -117,7 +117,7 @@ function MoveControls({ index, total, onMove }: MoveControlsProps) {
   );
 }
 
-function normalizeGroupFields(values: EditorFormValues, rules: RuleSource[]): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "shunt_bindings"> {
+function normalizeGroupFields(values: EditorFormValues, rules: RuleSource[]): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "route_bindings"> {
   return {
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
@@ -149,7 +149,7 @@ function normalizeGroupFields(values: EditorFormValues, rules: RuleSource[]): Pi
       filtered_group_name: item.filtered_group_name,
       dialer_group_name: item.dialer_group_name,
     })),
-    shunt_bindings: (values.shunt_bindings ?? []).map((item, index) => ({
+    route_bindings: (values.route_bindings ?? []).map((item, index) => ({
       position: index + 1,
       binding_name: item.binding_name?.trim() || (rules.find(r => r.id === item.rule_source_id)?.name ?? ""),
       rule_source_id: item.rule_source_id,
@@ -181,7 +181,7 @@ export default function MainConfigEditorDrawer({
   const filteredGroupsWatch = Form.useWatch("filtered_groups", form);
   const manualGroupsWatch = Form.useWatch("manual_groups", form);
 
-  const nonShuntGroupOptions = useMemo(
+  const nonRouteGroupOptions = useMemo(
     () => [
       ...(filteredGroupsWatch ?? [])
         .filter((item) => item?.name)
@@ -193,13 +193,13 @@ export default function MainConfigEditorDrawer({
     [filteredGroupsWatch, manualGroupsWatch],
   );
 
-  const shuntDefaultGroupOptions = useMemo(
+  const routeDefaultGroupOptions = useMemo(
     () => [
       { label: "DIRECT", value: "DIRECT" },
       { label: "REJECT", value: "REJECT" },
-      ...nonShuntGroupOptions,
+      ...nonRouteGroupOptions,
     ],
-    [nonShuntGroupOptions],
+    [nonRouteGroupOptions],
   );
 
   const filteredGroupOptions = useMemo(
@@ -302,7 +302,7 @@ export default function MainConfigEditorDrawer({
         filtered_groups: config.filtered_groups,
         manual_groups: config.manual_groups,
         dialer_override_rules: config.dialer_override_rules,
-        shunt_bindings: config.shunt_bindings,
+        route_bindings: config.route_bindings,
       };
       form.setFieldsValue(nextValues);
       queueFilteredGroupPreview(nextValues);
@@ -445,7 +445,7 @@ export default function MainConfigEditorDrawer({
                 label="Final Target Group"
                 rules={[{ required: true }]}
               >
-                <Select options={nonShuntGroupOptions} showSearch />
+                <Select options={nonRouteGroupOptions} showSearch />
               </Form.Item>
             </Col>
           ) : null}
@@ -877,7 +877,7 @@ export default function MainConfigEditorDrawer({
                         label="Dialer Group"
                         rules={[{ required: true }]}
                       >
-                        <Select options={nonShuntGroupOptions} showSearch />
+                        <Select options={nonRouteGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={4}>
@@ -909,8 +909,8 @@ export default function MainConfigEditorDrawer({
         </Form.List>
 
         <Divider />
-        <Typography.Title level={5}>Shunt Bindings</Typography.Title>
-        <Form.List name="shunt_bindings">
+        <Typography.Title level={5}>Route Bindings</Typography.Title>
+        <Form.List name="route_bindings">
           {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
               {fields.map((field, index) => (
@@ -935,7 +935,7 @@ export default function MainConfigEditorDrawer({
                       <Form.Item noStyle shouldUpdate>
                         {() => {
                           const ruleSourceId = form.getFieldValue([
-                            "shunt_bindings",
+                            "route_bindings",
                             field.name,
                             "rule_source_id",
                           ]) as string | undefined;
@@ -957,7 +957,7 @@ export default function MainConfigEditorDrawer({
                         label="Default Group"
                         rules={[{ required: true }]}
                       >
-                        <Select options={shuntDefaultGroupOptions} showSearch />
+                        <Select options={routeDefaultGroupOptions} showSearch />
                       </Form.Item>
                     </Col>
                     <Col xs={12} sm={6} md={3}>
@@ -978,7 +978,7 @@ export default function MainConfigEditorDrawer({
                   </Row>
                 </Card>
               ))}
-              <Tooltip title="Add Shunt Binding">
+              <Tooltip title="Add Route Binding">
                 <Button
                   icon={<PlusOutlined />}
                   onClick={() =>

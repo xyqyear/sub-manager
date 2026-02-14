@@ -78,7 +78,7 @@ export interface MainConfig {
     filtered_group_name: string;
     dialer_group_name: string;
   }[];
-  shunt_bindings: {
+  route_bindings: {
     position: number;
     binding_name: string;
     rule_source_id: string;

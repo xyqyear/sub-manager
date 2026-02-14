@@ -56,7 +56,7 @@ async def get_rule_payload(
     config = await _get_config_or_404(db, config_id)
     _check_password(config, password)
 
-    if not any(b.rule_source_id == rule_source_id for b in config.shunt_bindings):
+    if not any(b.rule_source_id == rule_source_id for b in config.route_bindings):
         raise HTTPException(status_code=404, detail="Rule source is not linked to config")
 
     rule_source = await db.get(RuleSource, rule_source_id)

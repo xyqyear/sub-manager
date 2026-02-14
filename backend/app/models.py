@@ -20,7 +20,7 @@ from app.schemas.configs import (
     DialerOverridePayload,
     FilteredGroupPayload,
     ManualGroupPayload,
-    ShuntBindingPayload,
+    RouteBindingPayload,
 )
 from app.services.common import utc_now
 
@@ -152,6 +152,6 @@ class MainConfig(Base, TimestampMixin):
     dialer_override_rules: Mapped[list[DialerOverridePayload]] = mapped_column(
         PydanticListType(DialerOverridePayload), default=list, nullable=False
     )
-    shunt_bindings: Mapped[list[ShuntBindingPayload]] = mapped_column(
-        PydanticListType(ShuntBindingPayload), default=list, nullable=False
+    route_bindings: Mapped[list[RouteBindingPayload]] = mapped_column(
+        PydanticListType(RouteBindingPayload), default=list, nullable=False
     )
