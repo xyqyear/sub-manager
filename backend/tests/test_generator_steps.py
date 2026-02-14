@@ -89,6 +89,7 @@ def _make_source_input(**overrides: Any) -> GenerationInput:
     defaults: dict[str, Any] = dict(
         base_config_yaml="mixed-port: 7890\n",
         final_target_type="DIRECT",
+        public_base_url="http://test:5678",
     )
     defaults.update(overrides)
     return GenerationInput(**defaults)

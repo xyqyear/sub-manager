@@ -40,18 +40,20 @@ class GenerationInput(BaseModel):
     base_config_yaml: str
     final_target_type: str
     final_target_group_name: str | None = None
+    public_base_url: str = ""
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
     route_bindings: list[RouteBindingPayload] = []
 
     @staticmethod
-    def from_main_config(config: MainConfig) -> GenerationInput:
+    def from_main_config(config: MainConfig, *, public_base_url: str) -> GenerationInput:
         return GenerationInput(
             config_id=config.id,
             base_config_yaml=config.base_config_yaml,
             final_target_type=config.final_target_type,
             final_target_group_name=config.final_target_group_name,
+            public_base_url=public_base_url,
             filtered_groups=config.filtered_groups,
             manual_groups=config.manual_groups,
             dialer_override_rules=config.dialer_override_rules,
@@ -59,12 +61,13 @@ class GenerationInput(BaseModel):
         )
 
     @staticmethod
-    def from_draft(draft: DraftPreviewRequest) -> GenerationInput:
+    def from_draft(draft: DraftPreviewRequest, *, public_base_url: str) -> GenerationInput:
         return GenerationInput(
             config_id=draft.config_id,
             base_config_yaml=draft.base_config_yaml,
             final_target_type=draft.final_target_type,
             final_target_group_name=draft.final_target_group_name,
+            public_base_url=public_base_url,
             filtered_groups=draft.filtered_groups,
             manual_groups=draft.manual_groups,
             dialer_override_rules=draft.dialer_override_rules,
@@ -437,7 +440,7 @@ def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, Rul
         provider_keys_used.add(provider_key)
 
         rule_url = (
-            f"{settings.public_base_url.rstrip('/')}{settings.api_prefix}/public/"
+            f"{ctx.source.public_base_url}{settings.api_prefix}/public/"
             f"rules/{rule_source.id}.yaml"
         )
         ctx.rule_providers[provider_key] = RuleProviderObj(

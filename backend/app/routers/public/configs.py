@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.models import MainConfig, RuleSource
-from app.services.common import GenerationError
+from app.services.common import GenerationError, get_public_base_url
 from app.services.generator import GenerationInput, generate_config_yaml, render_rule_source_yaml
 
 router = APIRouter(prefix="/public/configs", tags=["public-configs"])
@@ -25,6 +25,7 @@ async def _get_config_or_404(db: AsyncSession, config_id: str) -> MainConfig:
 @router.get("/{config_id}/artifact", response_class=PlainTextResponse)
 async def get_artifact(
     config_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> PlainTextResponse:
     config = await _get_config_or_404(db, config_id)
@@ -32,7 +33,7 @@ async def get_artifact(
     try:
         result = await generate_config_yaml(
             db,
-            GenerationInput.from_main_config(config),
+            GenerationInput.from_main_config(config, public_base_url=get_public_base_url(request)),
         )
     except GenerationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)

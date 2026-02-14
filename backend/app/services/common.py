@@ -6,6 +6,11 @@ import random
 import re
 
 from fastapi import HTTPException
+from starlette.requests import Request
+
+
+def get_public_base_url(request: Request) -> str:
+    return str(request.base_url).rstrip("/")
 
 
 @dataclass

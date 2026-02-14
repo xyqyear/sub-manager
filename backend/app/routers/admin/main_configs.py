@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_token
@@ -15,7 +15,7 @@ from app.schemas.configs import (
     MainConfigUpdate,
     PreviewWithDiagnosticsResponse,
 )
-from app.services.common import GenerationError, ServiceError, to_http_error
+from app.services.common import GenerationError, ServiceError, get_public_base_url, to_http_error
 from app.services.generator import GenerationInput, generate_config_yaml
 from app.services.main_configs import (
     create_main_config,
@@ -70,6 +70,7 @@ async def preview_filtered_groups_endpoint(
 @router.post("/preview-draft", response_model=PreviewWithDiagnosticsResponse)
 async def preview_draft_endpoint(
     payload: DraftPreviewRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> PreviewWithDiagnosticsResponse:
     try:
@@ -81,7 +82,7 @@ async def preview_draft_endpoint(
         await validate_builder_refs(db, payload.filtered_groups, payload.route_bindings)
         result = await generate_config_yaml(
             db,
-            GenerationInput.from_draft(payload),
+            GenerationInput.from_draft(payload, public_base_url=get_public_base_url(request)),
         )
         return PreviewWithDiagnosticsResponse(
             yaml=result.yaml,
@@ -127,13 +128,14 @@ async def delete_main_config_endpoint(
 @router.post("/{config_id}/preview", response_model=PreviewWithDiagnosticsResponse)
 async def preview_config_endpoint(
     config_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> PreviewWithDiagnosticsResponse:
     try:
         config = await get_main_config_or_404(db, config_id)
         result = await generate_config_yaml(
             db,
-            GenerationInput.from_main_config(config),
+            GenerationInput.from_main_config(config, public_base_url=get_public_base_url(request)),
         )
         return PreviewWithDiagnosticsResponse(
             yaml=result.yaml,

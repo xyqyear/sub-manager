@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     refresh_loop_tick_sec: int = 15
     default_test_url: str = "https://www.gstatic.com/generate_204"
     default_test_interval: int = 300
-    public_base_url: str = "http://localhost:5678"
 
     request_timeout_sec: float = 30.0
     min_refresh_interval_sec: int = 60

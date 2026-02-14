@@ -229,7 +229,7 @@ The generation pipeline uses a single `GenerationInput` model and `generate_conf
 7. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
 8. **Route groups + rule-providers** - Each binding generates:
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
-   - A `rule-providers` entry pointing to `{public_base_url}/api/public/rules/{rule_id}.yaml`
+   - A `rule-providers` entry pointing to `{request_base_url}/api/public/rules/{rule_id}.yaml` (base URL derived from the incoming HTTP request)
    - A `RULE-SET,{provider_key},{binding_name}` rules line
 9. **Final MATCH** - Appended last: `MATCH,{final_target}`
 10. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
@@ -304,7 +304,7 @@ PreviewWithDiagnosticsResponse:
 
 # Generator input (internal, not an API schema)
 GenerationInput:
-  config_id, base_config_yaml, final_target_type, final_target_group_name
+  config_id, base_config_yaml, final_target_type, final_target_group_name, public_base_url
   filtered_groups, manual_groups, dialer_override_rules, route_bindings
 
 # Type enums
@@ -320,7 +320,6 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 | -------------------------- | -------------------------------------- | ------------------------------------ |
 | `ADMIN_TOKEN`              | `change-me`                            | Bearer token for admin APIs          |
 | `DATABASE_URL`             | `sqlite+aiosqlite:///./db.sqlite3`     |                                      |
-| `PUBLIC_BASE_URL`          | `http://localhost:5678`                | Used in generated rule-provider URLs |
 | `API_PREFIX`               | `/api`                                 |                                      |
 | `CORS_ORIGINS`             | `["http://localhost:3000", ...]`       |                                      |
 | `REFRESH_LOOP_TICK_SEC`    | `15`                                   | Background refresh check interval    |
