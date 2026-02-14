@@ -404,7 +404,6 @@ def apply_dialer_overrides(ctx: GenerationContext) -> None:
 
 def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, RuleSource]) -> None:
     provider_keys_used: set[str] = set()
-    config_id_for_url = ctx.source.config_id or "__UNSAVED__"
 
     for idx, binding in enumerate(sorted(ctx.source.route_bindings, key=lambda s: s.position), start=1):
         if binding.default_group_name not in ctx.available_non_route_groups | {"DIRECT", "REJECT"}:
@@ -439,7 +438,7 @@ def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, Rul
 
         rule_url = (
             f"{settings.public_base_url.rstrip('/')}{settings.api_prefix}/public/"
-            f"configs/{config_id_for_url}/rules/{rule_source.id}.yaml"
+            f"rules/{rule_source.id}.yaml"
         )
         ctx.rule_providers[provider_key] = RuleProviderObj(
             type="http",

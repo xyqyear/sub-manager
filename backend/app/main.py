@@ -16,6 +16,7 @@ from app.routers.admin.main_configs import router as admin_main_configs_router
 from app.routers.admin.rules import router as admin_rules_router
 from app.routers.admin.subscriptions import router as admin_subscriptions_router
 from app.routers.public.configs import router as public_configs_router
+from app.routers.public.configs import rules_router as public_rules_router
 from app.services.refresh_loop import refresh_loop_manager
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -48,6 +49,7 @@ api_app.include_router(admin_subscriptions_router)
 api_app.include_router(admin_rules_router)
 api_app.include_router(admin_main_configs_router)
 api_app.include_router(public_configs_router)
+api_app.include_router(public_rules_router)
 
 logger = logging.getLogger(__name__)
 

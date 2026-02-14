@@ -161,7 +161,7 @@ async def test_generation_flow_manual_sources(client, admin_headers):
     assert "MATCH,DIRECT" in artifact
 
     rule_payload_response = await client.get(
-        f"/api/public/configs/{config_id}/rules/{rule_id}.yaml",
+        f"/api/public/rules/{rule_id}.yaml",
     )
     assert rule_payload_response.status_code == 200, rule_payload_response.text
     assert "payload:" in rule_payload_response.text

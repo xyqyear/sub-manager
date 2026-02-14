@@ -29,6 +29,7 @@ Set `ADMIN_TOKEN` in `backend/.env` (defaults to `change-me`). Use same token to
 ### Problem
 
 Clash Meta users who subscribe to multiple proxy providers need to:
+
 - Combine proxy nodes from different providers into one config
 - Apply traffic routing rules (e.g., Google traffic through HK nodes, domestic traffic direct)
 - Keep subscriptions and rules auto-updated
@@ -43,6 +44,7 @@ Three stages, each corresponding to a resource type:
 **Stage 1 — Subscription Sources: where proxy nodes come from**
 
 Users add their proxy providers. A provider can be:
+
 - A remote URL (e.g., from a VPN service) — the system fetches and caches the proxy node list, tracks traffic usage/expiry, and auto-refreshes on a schedule
 - A manually entered single proxy node (YAML)
 
@@ -51,6 +53,7 @@ Each source provides a list of proxy nodes (e.g., "Hong Kong 1", "US IEPL 2", et
 **Stage 2 — Rule Sources: traffic routing rules**
 
 Users add rule sets that define which domains/IPs should be matched. A rule source can be:
+
 - A remote URL (e.g., a community-maintained list of ad domains or China IP ranges)
 - Manually entered rules
 
@@ -59,6 +62,7 @@ Each rule source has a behavior type: `classical` (full rule syntax), `domain` (
 **Stage 3 — Main Configs: the composition layer**
 
 This is where everything comes together. A main config has:
+
 - A base YAML (ports, DNS, TUN settings, etc. — everything except proxies, groups, and rules)
 - Four builder field groups (filtered groups, manual groups, dialer overrides, route bindings) that visually compose proxy groups and routing rules (see below)
 
@@ -69,6 +73,7 @@ The builder is the core of the product. It has four sections that work together 
 **Filtered Groups** — "Give me specific nodes from a subscription"
 
 Each filtered group defines regex rules against one or more subscription sources. Example:
+
 - Name: "HK", regex `香港|HK|Hong Kong` against subscription "Provider A" → produces a proxy group containing only matching HK nodes
 - Mode: `select` (manual pick), `url-test` (auto-select fastest), or `fallback` (auto-failover)
 
@@ -77,18 +82,21 @@ Only nodes matched by at least one filtered group appear in the final config. Un
 **Manual Groups** — "Combine groups for advanced routing"
 
 Manual groups reference filtered groups or other manual groups as members. Use cases:
+
 - A "Node Select" group containing "HK", "JP", "US" filtered groups plus an "Auto Select" url-test group
 - A load-balancing or failover group across multiple regions
 
 **Dialer Overrides** — "Route traffic through a proxy chain"
 
 Assigns a `dialer-proxy` to all nodes in a filtered group, creating a relay chain. Example:
+
 - All nodes in "My VPS" group get `dialer-proxy: "US Transit"` → traffic goes: client → US Transit node → VPS node → destination
 - This hides the final destination from the transit provider and hides the transit from the destination
 
 **Route Bindings** — "Which rule goes to which group"
 
 Each binding pairs a rule source with a proxy group name and a default target. Example:
+
 - Rule "Google" → group "Google", default to "Node Select"
 - Rule "Ad Block" → group "Ads", default to REJECT
 - Rule "China" → group "Domestic", default to DIRECT
@@ -106,9 +114,9 @@ Rule payloads referenced in the config's `rule-providers` section point back to 
 ## Tech Stack
 
 | Layer    | Stack                                                  |
-|----------|--------------------------------------------------------|
+| -------- | ------------------------------------------------------ |
 | Backend  | FastAPI + async SQLAlchemy + aiosqlite, Python >= 3.13 |
-| Frontend | React 19 + Vite 7 + Ant Design 6 + TypeScript 5.9     |
+| Frontend | React 19 + Vite 7 + Ant Design 6 + TypeScript 5.9      |
 | Database | SQLite (single file `backend/db.sqlite3`)              |
 | Auth     | Static bearer token (admin)                            |
 | Deploy   | Docker (multi-stage build, single container)           |
@@ -181,6 +189,7 @@ The three resource types described in the Product Overview map to the following 
 ### Subscription Sources (`subscription_source`)
 
 Corresponds to Stage 1 (proxy node providers). Two modes:
+
 - **remote**: Fetched from URL with `User-Agent: mihomo/1.18.3`, optional `Authorization` header. Caches `proxies` list from YAML. Parses `subscription-userinfo` header for traffic data.
 - **manual**: User provides a single YAML proxy object directly.
 
@@ -193,16 +202,17 @@ Corresponds to Stage 2 (traffic routing rules). Two modes (remote/manual). Each 
 ### Main Configs (`main_config`) + Builder Graph
 
 Corresponds to Stage 3 (the composition layer). A main config combines subscriptions + rules into a final output. Each config has:
+
 - `base_config_yaml`: base Clash settings (ports, DNS, TUN, etc.)
 - `final_target_type`: DIRECT / REJECT / group (for the trailing MATCH rule)
 - A **builder graph** stored as 4 JSON columns directly on `main_config`, using a `PydanticListType` TypeDecorator that serializes/deserializes via Pydantic `TypeAdapter`:
 
-| Column                 | Pydantic Type              | Purpose                                    |
-|------------------------|----------------------------|--------------------------------------------|
-| `filtered_groups`      | `list[FilteredGroupPayload]` | Named proxy groups filtered by regex (each contains nested rules) |
-| `manual_groups`        | `list[ManualGroupPayload]`   | Named groups referencing filtered/manual groups (each contains nested members) |
-| `dialer_override_rules`| `list[DialerOverridePayload]`| Assigns `dialer-proxy` to proxies in a filtered group |
-| `route_bindings`       | `list[RouteBindingPayload]`  | Binds a rule source to a route proxy-group |
+| Column                  | Pydantic Type                 | Purpose                                                                        |
+| ----------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| `filtered_groups`       | `list[FilteredGroupPayload]`  | Named proxy groups filtered by regex (each contains nested rules)              |
+| `manual_groups`         | `list[ManualGroupPayload]`    | Named groups referencing filtered/manual groups (each contains nested members) |
+| `dialer_override_rules` | `list[DialerOverridePayload]` | Assigns `dialer-proxy` to proxies in a filtered group                          |
+| `route_bindings`        | `list[RouteBindingPayload]`   | Binds a rule source to a route proxy-group                                     |
 
 All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps. Lists are ordered by `position` field within the JSON arrays.
 
@@ -219,7 +229,7 @@ The generation pipeline uses a single `GenerationInput` model and `generate_conf
 7. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
 8. **Route groups + rule-providers** - Each binding generates:
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
-   - A `rule-providers` entry pointing to `{public_base_url}/api/public/configs/{id}/rules/{rule_id}.yaml`
+   - A `rule-providers` entry pointing to `{public_base_url}/api/public/rules/{rule_id}.yaml`
    - A `RULE-SET,{provider_key},{binding_name}` rules line
 9. **Final MATCH** - Appended last: `MATCH,{final_target}`
 10. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
@@ -233,35 +243,35 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 
 ### Admin
 
-| Method | Path                                                  | Purpose                     |
-|--------|-------------------------------------------------------|-----------------------------|
-| GET    | `/api/admin/health`                                   | Health + refresh loop status|
-| GET    | `/api/admin/subscriptions`                            | List subscriptions          |
-| POST   | `/api/admin/subscriptions`                            | Create subscription         |
-| PUT    | `/api/admin/subscriptions/{id}`                       | Update subscription         |
-| POST   | `/api/admin/subscriptions/{id}/refresh`               | Sync refresh                |
-| POST   | `/api/admin/subscriptions/{id}/refresh-async`         | Async refresh               |
-| DELETE | `/api/admin/subscriptions/{id}`                       | Delete subscription         |
-| GET    | `/api/admin/rules`                                    | List rules                  |
-| POST   | `/api/admin/rules`                                    | Create rule                 |
-| PUT    | `/api/admin/rules/{id}`                               | Update rule                 |
-| POST   | `/api/admin/rules/{id}/refresh`                       | Sync refresh                |
-| POST   | `/api/admin/rules/{id}/refresh-async`                 | Async refresh               |
-| DELETE | `/api/admin/rules/{id}`                               | Delete rule                 |
-| GET    | `/api/admin/main-configs`                             | List configs                |
-| POST   | `/api/admin/main-configs`                             | Create config               |
-| PUT    | `/api/admin/main-configs/{id}`                        | Update config               |
-| DELETE | `/api/admin/main-configs/{id}`                        | Delete config               |
-| POST   | `/api/admin/main-configs/{id}/preview`                | Preview generated YAML      |
-| POST   | `/api/admin/main-configs/filtered-groups/preview`     | Preview filtered group matches |
-| POST   | `/api/admin/main-configs/preview-draft`               | Preview uncommitted builder changes |
+| Method | Path                                              | Purpose                             |
+| ------ | ------------------------------------------------- | ----------------------------------- |
+| GET    | `/api/admin/health`                               | Health + refresh loop status        |
+| GET    | `/api/admin/subscriptions`                        | List subscriptions                  |
+| POST   | `/api/admin/subscriptions`                        | Create subscription                 |
+| PUT    | `/api/admin/subscriptions/{id}`                   | Update subscription                 |
+| POST   | `/api/admin/subscriptions/{id}/refresh`           | Sync refresh                        |
+| POST   | `/api/admin/subscriptions/{id}/refresh-async`     | Async refresh                       |
+| DELETE | `/api/admin/subscriptions/{id}`                   | Delete subscription                 |
+| GET    | `/api/admin/rules`                                | List rules                          |
+| POST   | `/api/admin/rules`                                | Create rule                         |
+| PUT    | `/api/admin/rules/{id}`                           | Update rule                         |
+| POST   | `/api/admin/rules/{id}/refresh`                   | Sync refresh                        |
+| POST   | `/api/admin/rules/{id}/refresh-async`             | Async refresh                       |
+| DELETE | `/api/admin/rules/{id}`                           | Delete rule                         |
+| GET    | `/api/admin/main-configs`                         | List configs                        |
+| POST   | `/api/admin/main-configs`                         | Create config                       |
+| PUT    | `/api/admin/main-configs/{id}`                    | Update config                       |
+| DELETE | `/api/admin/main-configs/{id}`                    | Delete config                       |
+| POST   | `/api/admin/main-configs/{id}/preview`            | Preview generated YAML              |
+| POST   | `/api/admin/main-configs/filtered-groups/preview` | Preview filtered group matches      |
+| POST   | `/api/admin/main-configs/preview-draft`           | Preview uncommitted builder changes |
 
 ### Public
 
-| Method | Path                                                        | Purpose            |
-|--------|-------------------------------------------------------------|--------------------|
-| GET    | `/api/public/configs/{id}/artifact`                         | Generated YAML     |
-| GET    | `/api/public/configs/{id}/rules/{rule_id}.yaml`             | Rule payload YAML  |
+| Method | Path                                | Purpose           |
+| ------ | ----------------------------------- | ----------------- |
+| GET    | `/api/public/configs/{id}/artifact` | Generated YAML    |
+| GET    | `/api/public/rules/{rule_id}.yaml`  | Rule payload YAML |
 
 ## Key Backend Schemas
 
@@ -306,19 +316,19 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 
 ## Environment Variables (`backend/app/config.py`)
 
-| Variable                  | Default                              | Notes                                |
-|---------------------------|--------------------------------------|--------------------------------------|
-| `ADMIN_TOKEN`             | `change-me`                          | Bearer token for admin APIs          |
-| `DATABASE_URL`            | `sqlite+aiosqlite:///./db.sqlite3`   |                                      |
-| `PUBLIC_BASE_URL`         | `http://localhost:5678`              | Used in generated rule-provider URLs |
-| `API_PREFIX`              | `/api`                               |                                      |
-| `CORS_ORIGINS`            | `["http://localhost:3000", ...]`     |                                      |
-| `REFRESH_LOOP_TICK_SEC`   | `15`                                 | Background refresh check interval    |
-| `REQUEST_TIMEOUT_SEC`     | `30.0`                               | HTTP fetch timeout                   |
-| `MIN_REFRESH_INTERVAL_SEC`| `60`                                 | Clamp for auto-update interval       |
-| `MAX_REFRESH_INTERVAL_SEC`| `86400`                              | Clamp for auto-update interval       |
-| `DEFAULT_TEST_URL`        | `https://www.gstatic.com/generate_204`| Fallback for group test_url         |
-| `DEFAULT_TEST_INTERVAL`   | `300`                                | Fallback for group test_interval     |
+| Variable                   | Default                                | Notes                                |
+| -------------------------- | -------------------------------------- | ------------------------------------ |
+| `ADMIN_TOKEN`              | `change-me`                            | Bearer token for admin APIs          |
+| `DATABASE_URL`             | `sqlite+aiosqlite:///./db.sqlite3`     |                                      |
+| `PUBLIC_BASE_URL`          | `http://localhost:5678`                | Used in generated rule-provider URLs |
+| `API_PREFIX`               | `/api`                                 |                                      |
+| `CORS_ORIGINS`             | `["http://localhost:3000", ...]`       |                                      |
+| `REFRESH_LOOP_TICK_SEC`    | `15`                                   | Background refresh check interval    |
+| `REQUEST_TIMEOUT_SEC`      | `30.0`                                 | HTTP fetch timeout                   |
+| `MIN_REFRESH_INTERVAL_SEC` | `60`                                   | Clamp for auto-update interval       |
+| `MAX_REFRESH_INTERVAL_SEC` | `86400`                                | Clamp for auto-update interval       |
+| `DEFAULT_TEST_URL`         | `https://www.gstatic.com/generate_204` | Fallback for group test_url          |
+| `DEFAULT_TEST_INTERVAL`    | `300`                                  | Fallback for group test_interval     |
 
 ## Background Refresh
 

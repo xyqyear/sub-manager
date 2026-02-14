@@ -10,6 +10,7 @@ from app.services.common import GenerationError
 from app.services.generator import GenerationInput, generate_config_yaml, render_rule_source_yaml
 
 router = APIRouter(prefix="/public/configs", tags=["public-configs"])
+rules_router = APIRouter(prefix="/public/rules", tags=["public-rules"])
 
 
 async def _get_config_or_404(db: AsyncSession, config_id: str) -> MainConfig:
@@ -39,17 +40,11 @@ async def get_artifact(
     return PlainTextResponse(result.yaml, media_type="application/yaml")
 
 
-@router.get("/{config_id}/rules/{rule_source_id}.yaml", response_class=PlainTextResponse)
+@rules_router.get("/{rule_source_id}.yaml", response_class=PlainTextResponse)
 async def get_rule_payload(
-    config_id: str,
     rule_source_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> PlainTextResponse:
-    config = await _get_config_or_404(db, config_id)
-
-    if not any(b.rule_source_id == rule_source_id for b in config.route_bindings):
-        raise HTTPException(status_code=404, detail="Rule source is not linked to config")
-
     rule_source = await db.get(RuleSource, rule_source_id)
     if rule_source is None:
         raise HTTPException(status_code=404, detail="Rule source not found")
