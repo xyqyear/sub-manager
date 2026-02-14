@@ -44,7 +44,7 @@ const defaultFormValues: SubscriptionFormValues = {
   remote_url: "",
   remote_auth_header: "",
   auto_update: false,
-  update_interval_sec: 3600,
+  update_interval_sec: 86400,
   proxy_yaml_object_text: "",
 };
 

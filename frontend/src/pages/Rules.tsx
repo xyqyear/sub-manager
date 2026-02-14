@@ -38,11 +38,11 @@ type RuleFormValues = {
 const defaultFormValues: RuleFormValues = {
   name: "",
   mode: "remote",
-  behavior: "classical",
+  behavior: "domain",
   enabled: true,
   remote_url: "",
   auto_update: false,
-  update_interval_sec: 3600,
+  update_interval_sec: 86400,
   payload_lines_text: "",
 };
 
