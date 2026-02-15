@@ -83,8 +83,17 @@ export default function SubscriptionsPage() {
     setOpen(true);
   };
 
-  const openEdit = (item: SubscriptionSourceListItem) => {
+  const openEdit = async (item: SubscriptionSourceListItem) => {
     setEditing(item);
+    let proxyText = "";
+    if (item.mode === "manual") {
+      try {
+        const full = await fetchFullItem(item.id);
+        proxyText = proxiesToYaml(full);
+      } catch {
+        void message.error("Failed to load existing proxy data");
+      }
+    }
     form.setFieldsValue({
       name: item.name,
       mode: item.mode,
@@ -93,7 +102,7 @@ export default function SubscriptionsPage() {
       remote_auth_header: item.remote_auth_header ?? "",
       auto_update: item.auto_update,
       update_interval_sec: item.update_interval_sec,
-      proxy_yaml_object_text: "",
+      proxy_yaml_object_text: proxyText,
     });
     setOpen(true);
   };
