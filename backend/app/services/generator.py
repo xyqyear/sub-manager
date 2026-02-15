@@ -466,20 +466,33 @@ def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, Rul
 
 
 # ---------------------------------------------------------------------------
-# Step 8: resolve_final_target (pure)
+# Step 8: build_final_match_group (pure)
 # ---------------------------------------------------------------------------
 
-def resolve_final_target(source: GenerationInput, available_groups: set[str]) -> str:
+def build_final_match_group(ctx: GenerationContext) -> str:
+    source = ctx.source
     if source.final_target_type == "group":
         if not source.final_target_group_name:
             raise GenerationError("final target group is required", 422)
-        if source.final_target_group_name not in available_groups:
+        if source.final_target_group_name not in ctx.available_non_route_groups:
             raise GenerationError(f"final target group not found: {source.final_target_group_name}", 422)
-        return source.final_target_group_name
+        default_target = source.final_target_group_name
     elif source.final_target_type in {"DIRECT", "REJECT"}:
-        return source.final_target_type
+        default_target = source.final_target_type
     else:
         raise GenerationError("invalid final target type", 422)
+
+    label = "Final"
+    members = dedupe_keep_order(
+        [default_target, "DIRECT"]
+        + ctx.group_names_manual
+        + ctx.group_names_filtered
+        + ["REJECT"]
+    )
+    ctx.route_groups.append(
+        ProxyGroupObj(name=label, type="select", proxies=members)
+    )
+    return label
 
 
 # ---------------------------------------------------------------------------
@@ -553,8 +566,8 @@ def _generate_from_loaded_data(
     build_manual_groups(ctx)
     apply_dialer_overrides(ctx)
     build_route_groups_and_rules(ctx, rule_map, resolved_bindings)
-    final_target = resolve_final_target(source, ctx.available_non_route_groups)
-    ctx.rules.append(f"MATCH,{final_target}")
+    final_match_label = build_final_match_group(ctx)
+    ctx.rules.append(f"MATCH,{final_match_label}")
     all_groups = ctx.filtered_groups + ctx.manual_groups + ctx.route_groups
     final_proxies = filter_and_clean_proxies(ctx.pool_result, all_groups)
     proxy_group_dicts = [g.model_dump(exclude_none=True) for g in all_groups]

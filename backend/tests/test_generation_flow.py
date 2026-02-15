@@ -183,7 +183,7 @@ async def test_generation_flow_manual_sources(client, admin_headers):
 
     assert "proxy-groups:" in artifact
     assert "rule-providers:" in artifact
-    assert "MATCH,DIRECT" in artifact
+    assert "MATCH,Final" in artifact
 
     rule_payload_response = await client.get(
         f"/api/public/rules/{rule_id}.yaml",

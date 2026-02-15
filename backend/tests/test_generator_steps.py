@@ -31,6 +31,7 @@ from app.services.generator import (
     _is_stale,
     apply_dialer_overrides,
     build_filtered_groups,
+    build_final_match_group,
     build_manual_groups,
     build_proxy_pool_with_collision_names,
     build_route_groups_and_rules,
@@ -38,7 +39,6 @@ from app.services.generator import (
     filter_and_clean_proxies,
     load_subscriptions,
     merge_into_base_yaml,
-    resolve_final_target,
 )
 
 # ---------------------------------------------------------------------------
@@ -575,32 +575,60 @@ class TestBuildRouteGroupsAndRules:
 
 
 # ---------------------------------------------------------------------------
-# resolve_final_target
+# build_final_match_group
 # ---------------------------------------------------------------------------
 
-class TestResolveFinalTarget:
+class TestBuildFinalMatchGroup:
     def test_direct(self):
         source = _make_source_input(final_target_type="DIRECT")
-        assert resolve_final_target(source, set()) == "DIRECT"
+        ctx = _make_ctx(source=source, group_names_filtered=["FG"], group_names_manual=["MG"])
+        ctx.available_non_route_groups = {"FG", "MG"}
+        result = build_final_match_group(ctx)
+        assert result == "Final"
+        assert len(ctx.route_groups) == 1
+        group = ctx.route_groups[0]
+        assert group.name == "Final"
+        assert group.type == "select"
+        assert group.proxies[0] == "DIRECT"
+        assert "MG" in group.proxies
+        assert "FG" in group.proxies
+        assert "REJECT" in group.proxies
 
     def test_reject(self):
         source = _make_source_input(final_target_type="REJECT")
-        assert resolve_final_target(source, set()) == "REJECT"
+        ctx = _make_ctx(source=source)
+        result = build_final_match_group(ctx)
+        assert result == "Final"
+        assert ctx.route_groups[0].proxies[0] == "REJECT"
 
     def test_valid_group(self):
         source = _make_source_input(final_target_type="group", final_target_group_name="FG")
-        assert resolve_final_target(source, {"FG"}) == "FG"
+        ctx = _make_ctx(source=source, group_names_filtered=["FG"])
+        ctx.available_non_route_groups = {"FG"}
+        result = build_final_match_group(ctx)
+        assert result == "Final"
+        assert ctx.route_groups[0].proxies[0] == "FG"
 
     def test_group_missing_name(self):
         source = _make_source_input(final_target_type="group", final_target_group_name=None)
+        ctx = _make_ctx(source=source)
         with pytest.raises(GenerationError) as exc_info:
-            resolve_final_target(source, set())
+            build_final_match_group(ctx)
         assert exc_info.value.status_code == 422
 
     def test_group_unknown_name(self):
         source = _make_source_input(final_target_type="group", final_target_group_name="NOPE")
+        ctx = _make_ctx(source=source, group_names_filtered=["FG"])
+        ctx.available_non_route_groups = {"FG"}
         with pytest.raises(GenerationError) as exc_info:
-            resolve_final_target(source, {"FG"})
+            build_final_match_group(ctx)
+        assert exc_info.value.status_code == 422
+
+    def test_invalid_type(self):
+        source = _make_source_input(final_target_type="INVALID")
+        ctx = _make_ctx(source=source)
+        with pytest.raises(GenerationError) as exc_info:
+            build_final_match_group(ctx)
         assert exc_info.value.status_code == 422
 
 
@@ -707,7 +735,9 @@ class TestGenerateFromLoadedData:
         parsed = yaml.safe_load(result.yaml)
         assert "proxies" in parsed
         assert "proxy-groups" in parsed
-        assert any("MATCH,DIRECT" in r for r in parsed["rules"])
+        assert any("MATCH,Final" in r for r in parsed["rules"])
+        group_names = [g["name"] for g in parsed["proxy-groups"]]
+        assert "Final" in group_names
 
     def test_copy_nodes_with_dialer_override(self):
         ordered_sources = [

@@ -255,7 +255,7 @@ The generation pipeline uses a single `GenerationInput` model and `generate_conf
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
    - A `rule-providers` entry pointing to `{request_base_url}/api/public/rules/{rule_id}.yaml` (base URL derived from the incoming HTTP request)
    - A `RULE-SET,{provider_key},{binding_name}` rules line
-9. **Final MATCH** - Appended last: `MATCH,{final_target}`
+9. **Final match group** - `build_final_match_group()` creates a `select` proxy-group named "Final" with the user's chosen default target (DIRECT/REJECT/group) as first member, followed by `[DIRECT, manual_groups, filtered_groups, REJECT]` (deduped). Appends `MATCH,Final` as the last rule.
 10. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
 11. **Merge** - Generated sections replace `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
 
