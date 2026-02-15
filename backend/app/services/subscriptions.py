@@ -4,14 +4,19 @@ import copy
 from typing import Any
 
 import httpx
+import yaml
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-import yaml
 
 from app.config import settings
 from app.models import SubscriptionSource
 from app.schemas.subscriptions import SubscriptionCreate, SubscriptionUpdate
-from app.services.common import ServiceError, next_refresh_time, parse_subscription_userinfo, utc_now
+from app.services.common import (
+    ServiceError,
+    next_refresh_time,
+    parse_subscription_userinfo,
+    utc_now,
+)
 
 
 def _normalize_interval(interval_sec: int) -> int:
@@ -164,7 +169,7 @@ async def refresh_remote_subscription(db: AsyncSession, source: SubscriptionSour
     if not source.remote_url:
         raise ServiceError("remote subscription has no remote_url", 422)
 
-    headers = {"User-Agent": "mihomo/1.18.3"}
+    headers = {"User-Agent": "mihomo.party/v1.8.9 (clash.meta)"}
     if source.remote_auth_header:
         headers["Authorization"] = source.remote_auth_header
 
