@@ -14,7 +14,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, GithubOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
 import type { RuleSource, RuleSourceListItem } from "@/types/api";
@@ -318,6 +318,13 @@ export default function RulesPage() {
         </Tooltip>
         <Tooltip title="Reload">
           <Button icon={<ReloadOutlined />} onClick={() => void fetchItems()} />
+        </Tooltip>
+        <Tooltip title="GeoSite Rules">
+          <Button
+            icon={<GithubOutlined />}
+            href="https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite"
+            target="_blank"
+          />
         </Tooltip>
       </Space>
 
