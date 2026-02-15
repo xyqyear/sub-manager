@@ -1,5 +1,6 @@
 import {
   Button,
+  Card,
   Form,
   Input,
   InputNumber,
@@ -9,7 +10,6 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   Tooltip,
   Typography,
@@ -18,13 +18,13 @@ import {
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
-import type { Breakpoint } from "antd";
 import type { SubscriptionSource, SubscriptionSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import { formatBytes, TRAFFIC_COLORS } from "@/utils/format";
 import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
 import useIsMobile from "@/hooks/useIsMobile";
+import CardGrid from "@/components/CardGrid";
 
 type SubscriptionFormValues = {
   name: string;
@@ -193,122 +193,95 @@ export default function SubscriptionsPage() {
     }
   };
 
-  const columns = [
-    {
-      title: "Name",
-      dataIndex: "name",
-      key: "name",
-    },
-    {
-      title: "Mode",
-      dataIndex: "mode",
-      key: "mode",
-      responsive: ["sm"] as Breakpoint[],
-      render: (value: string) => <Tag>{value}</Tag>,
-    },
-    {
-      title: "Status",
-      dataIndex: "last_status",
-      key: "last_status",
-      render: (value: string) => (
-        <Tag color={value === "ok" ? "success" : value === "error" ? "error" : "default"}>{value}</Tag>
-      ),
-    },
-    {
-      title: "Last Refresh",
-      key: "last_refresh_at",
-      responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: SubscriptionSourceListItem) =>
-        row.last_refresh_at ? (
-          <Tooltip title={new Date(row.last_refresh_at).toLocaleString()}>
-            <Typography.Text type="secondary">{formatRelativeTime(row.last_refresh_at)}</Typography.Text>
-          </Tooltip>
-        ) : (
-          <Typography.Text type="secondary">-</Typography.Text>
-        ),
-    },
-    {
-      title: "Next Refresh",
-      key: "next_refresh_at",
-      responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: SubscriptionSourceListItem) =>
-        row.next_refresh_at ? (
-          <Tooltip title={new Date(row.next_refresh_at).toLocaleString()}>
-            <Typography.Text type="secondary">{formatRelativeTime(row.next_refresh_at)}</Typography.Text>
-          </Tooltip>
-        ) : (
-          <Typography.Text type="secondary">-</Typography.Text>
-        ),
-    },
-    {
-      title: "Traffic",
-      key: "traffic",
-      width: 280,
-      responsive: ["lg"] as Breakpoint[],
-      render: (_: unknown, row: SubscriptionSourceListItem) => {
-        const info = row.subscription_userinfo_json;
-        if (!info || !info.total) return <Typography.Text type="secondary">-</Typography.Text>;
+  const renderCard = (item: SubscriptionSourceListItem) => {
+    const info = item.subscription_userinfo_json;
+    const hasTraffic = info && info.total;
 
-        const upload = info.upload ?? 0;
-        const download = info.download ?? 0;
-        const total = info.total;
-        const uploadPct = Math.min((upload / total) * 100, 100);
-        const totalUsedPct = Math.min(((upload + download) / total) * 100, 100);
-
-        return (
-          <div>
-            <Progress
-              percent={totalUsedPct}
-              success={{ percent: uploadPct, strokeColor: TRAFFIC_COLORS.upload }}
-              strokeColor={TRAFFIC_COLORS.download}
-              showInfo={false}
-              size={[undefined as unknown as number, 8]}
-            />
-            <div style={{ fontSize: 12, lineHeight: "18px" }}>
-              <span style={{ color: TRAFFIC_COLORS.upload }}>U: {formatBytes(upload)}</span>
-              {" / "}
-              <span style={{ color: TRAFFIC_COLORS.download }}>D: {formatBytes(download)}</span>
-              {" / "}
-              <span>{formatBytes(total)}</span>
-            </div>
-            {info.expire ? (
-              <div style={{ fontSize: 12, color: "#888" }}>
-                Exp: {new Date(info.expire * 1000).toLocaleDateString("sv-SE")}
-              </div>
-            ) : null}
-          </div>
-        );
-      },
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      render: (_: unknown, row: SubscriptionSourceListItem) => (
-        <Space>
-          <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
-          </Tooltip>
-          <Tooltip title="Refresh">
-            <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(row)} />
-          </Tooltip>
-          <Tooltip title="Preview">
-            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedProxies(row)} onClick={() => void openPreview(row)} />
-          </Tooltip>
-          <Tooltip title="Download">
-            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedProxies(row)} onClick={() => void handleDownload(row)} />
-          </Tooltip>
-          <Popconfirm
-            title="Delete subscription?"
-            onConfirm={() => void handleDelete(row)}
-          >
-            <Tooltip title="Delete">
-              <Button size="small" danger icon={<DeleteOutlined />} />
+    return (
+      <Card
+        size="small"
+        hoverable
+        title={item.name}
+        extra={
+          <Space>
+            <Tooltip title="Edit">
+              <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
             </Tooltip>
-          </Popconfirm>
+            <Tooltip title="Refresh">
+              <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(item)} />
+            </Tooltip>
+            <Tooltip title="Preview">
+              <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedProxies(item)} onClick={() => void openPreview(item)} />
+            </Tooltip>
+            <Tooltip title="Download">
+              <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedProxies(item)} onClick={() => void handleDownload(item)} />
+            </Tooltip>
+            <Popconfirm title="Delete subscription?" onConfirm={() => void handleDelete(item)}>
+              <Tooltip title="Delete">
+                <Button size="small" danger icon={<DeleteOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={4} style={{ display: "flex" }}>
+          <Space wrap size={4}>
+            <Tag>{item.mode}</Tag>
+            <Tag color={item.last_status === "ok" ? "success" : item.last_status === "error" ? "error" : "default"}>
+              {item.last_status}
+            </Tag>
+            {item.cached_proxies_count != null && item.cached_proxies_count > 0 && (
+              <Tag>{item.cached_proxies_count} proxies</Tag>
+            )}
+          </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Last:{" "}
+            {item.last_refresh_at ? (
+              <Tooltip title={new Date(item.last_refresh_at).toLocaleString()}>
+                <span>{formatRelativeTime(item.last_refresh_at)}</span>
+              </Tooltip>
+            ) : "-"}
+            {" / Next: "}
+            {item.next_refresh_at ? (
+              <Tooltip title={new Date(item.next_refresh_at).toLocaleString()}>
+                <span>{formatRelativeTime(item.next_refresh_at)}</span>
+              </Tooltip>
+            ) : "-"}
+          </Typography.Text>
+          {hasTraffic && (() => {
+            const upload = info.upload ?? 0;
+            const download = info.download ?? 0;
+            const total = info.total!;
+            const uploadPct = Math.min((upload / total) * 100, 100);
+            const totalUsedPct = Math.min(((upload + download) / total) * 100, 100);
+            return (
+              <div>
+                <Progress
+                  percent={totalUsedPct}
+                  success={{ percent: uploadPct, strokeColor: TRAFFIC_COLORS.upload }}
+                  strokeColor={TRAFFIC_COLORS.download}
+                  showInfo={false}
+                  size={[undefined as unknown as number, 8]}
+                />
+                <div style={{ fontSize: 12, lineHeight: "18px" }}>
+                  <span style={{ color: TRAFFIC_COLORS.upload }}>U: {formatBytes(upload)}</span>
+                  {" / "}
+                  <span style={{ color: TRAFFIC_COLORS.download }}>D: {formatBytes(download)}</span>
+                  {" / "}
+                  <span>{formatBytes(total)}</span>
+                </div>
+                {info.expire ? (
+                  <div style={{ fontSize: 12, color: "#888" }}>
+                    Exp: {new Date(info.expire * 1000).toLocaleDateString("sv-SE")}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })()}
         </Space>
-      ),
-    },
-  ];
+      </Card>
+    );
+  };
 
   return (
     <Space direction="vertical" style={{ display: "flex" }} size={16}>
@@ -321,14 +294,7 @@ export default function SubscriptionsPage() {
         </Tooltip>
       </Space>
 
-      <Table<SubscriptionSourceListItem>
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        columns={columns}
-        pagination={false}
-        scroll={{ x: "max-content" }}
-      />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
 
       <Modal
         title={editing ? "Edit Subscription" : "Create Subscription"}

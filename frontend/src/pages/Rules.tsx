@@ -1,5 +1,6 @@
 import {
   Button,
+  Card,
   Form,
   Input,
   InputNumber,
@@ -8,7 +9,6 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   Tooltip,
   Typography,
@@ -17,12 +17,12 @@ import {
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import yaml from "js-yaml";
-import type { Breakpoint } from "antd";
 import type { RuleSource, RuleSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
 import useIsMobile from "@/hooks/useIsMobile";
+import CardGrid from "@/components/CardGrid";
 
 type RuleFormValues = {
   name: string;
@@ -254,86 +254,61 @@ export default function RulesPage() {
     }
   };
 
-  const columns = [
-    {
-      title: "Name",
-      dataIndex: "name",
-      key: "name",
-    },
-    {
-      title: "Mode",
-      dataIndex: "mode",
-      key: "mode",
-      responsive: ["sm"] as Breakpoint[],
-      render: (value: string) => <Tag>{value}</Tag>,
-    },
-    {
-      title: "Behavior",
-      dataIndex: "behavior",
-      key: "behavior",
-      responsive: ["sm"] as Breakpoint[],
-      render: (value: string) => <Tag color="blue">{value}</Tag>,
-    },
-    {
-      title: "Status",
-      dataIndex: "last_status",
-      key: "last_status",
-      render: (value: string) => (
-        <Tag color={value === "ok" ? "success" : value === "error" ? "error" : "default"}>{value}</Tag>
-      ),
-    },
-    {
-      title: "Last Refresh",
-      key: "last_refresh_at",
-      responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: RuleSourceListItem) =>
-        row.last_refresh_at ? (
-          <Tooltip title={new Date(row.last_refresh_at).toLocaleString()}>
-            <Typography.Text type="secondary">{formatRelativeTime(row.last_refresh_at)}</Typography.Text>
-          </Tooltip>
-        ) : (
-          <Typography.Text type="secondary">-</Typography.Text>
-        ),
-    },
-    {
-      title: "Next Refresh",
-      key: "next_refresh_at",
-      responsive: ["md"] as Breakpoint[],
-      render: (_: unknown, row: RuleSourceListItem) =>
-        row.next_refresh_at ? (
-          <Tooltip title={new Date(row.next_refresh_at).toLocaleString()}>
-            <Typography.Text type="secondary">{formatRelativeTime(row.next_refresh_at)}</Typography.Text>
-          </Tooltip>
-        ) : (
-          <Typography.Text type="secondary">-</Typography.Text>
-        ),
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      render: (_: unknown, row: RuleSourceListItem) => (
+  const renderCard = (item: RuleSourceListItem) => (
+    <Card
+      size="small"
+      hoverable
+      title={item.name}
+      extra={
         <Space>
           <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => void openEdit(row)} />
+            <Button size="small" icon={<EditOutlined />} onClick={() => void openEdit(item)} />
           </Tooltip>
           <Tooltip title="Refresh">
-            <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(row)} />
+            <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(item)} />
           </Tooltip>
           <Tooltip title="Preview">
-            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedPayload(row)} onClick={() => void openPreview(row)} />
+            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedPayload(item)} onClick={() => void openPreview(item)} />
           </Tooltip>
           <Tooltip title="Download">
-            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedPayload(row)} onClick={() => void handleDownload(row)} />
+            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedPayload(item)} onClick={() => void handleDownload(item)} />
           </Tooltip>
-          <Popconfirm title="Delete rule?" onConfirm={() => void handleDelete(row)}>
+          <Popconfirm title="Delete rule?" onConfirm={() => void handleDelete(item)}>
             <Tooltip title="Delete">
               <Button size="small" danger icon={<DeleteOutlined />} />
             </Tooltip>
           </Popconfirm>
         </Space>
-      ),
-    },
-  ];
+      }
+    >
+      <Space direction="vertical" size={4} style={{ display: "flex" }}>
+        <Space wrap size={4}>
+          <Tag>{item.mode}</Tag>
+          <Tag color="blue">{item.behavior}</Tag>
+          <Tag color={item.last_status === "ok" ? "success" : item.last_status === "error" ? "error" : "default"}>
+            {item.last_status}
+          </Tag>
+          {item.cached_payload_lines_count != null && item.cached_payload_lines_count > 0 && (
+            <Tag>{item.cached_payload_lines_count} rules</Tag>
+          )}
+        </Space>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          Last:{" "}
+          {item.last_refresh_at ? (
+            <Tooltip title={new Date(item.last_refresh_at).toLocaleString()}>
+              <span>{formatRelativeTime(item.last_refresh_at)}</span>
+            </Tooltip>
+          ) : "-"}
+          {" / Next: "}
+          {item.next_refresh_at ? (
+            <Tooltip title={new Date(item.next_refresh_at).toLocaleString()}>
+              <span>{formatRelativeTime(item.next_refresh_at)}</span>
+            </Tooltip>
+          ) : "-"}
+        </Typography.Text>
+      </Space>
+    </Card>
+  );
 
   return (
     <Space direction="vertical" style={{ display: "flex" }} size={16}>
@@ -346,14 +321,7 @@ export default function RulesPage() {
         </Tooltip>
       </Space>
 
-      <Table<RuleSourceListItem>
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        columns={columns}
-        pagination={false}
-        scroll={{ x: "max-content" }}
-      />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
 
       <Modal
         title={editing ? "Edit Rule" : "Create Rule"}

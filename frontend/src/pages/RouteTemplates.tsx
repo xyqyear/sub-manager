@@ -10,16 +10,16 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tooltip,
+  Typography,
   message,
 } from "antd";
 import { DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined, ReloadOutlined, UpOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
-import type { Breakpoint } from "antd";
 import type { RouteTemplate, RuleSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import useIsMobile from "@/hooks/useIsMobile";
+import CardGrid from "@/components/CardGrid";
 
 type SlotFormValue = { name: string };
 type BindingFormValue = {
@@ -156,37 +156,29 @@ export default function RouteTemplatesPage() {
     }
   };
 
-  const columns = [
-    { title: "Name", dataIndex: "name", key: "name" },
-    {
-      title: "Slots",
-      key: "slots",
-      responsive: ["sm"] as Breakpoint[],
-      render: (_: unknown, row: RouteTemplate) => row.slots.length,
-    },
-    {
-      title: "Bindings",
-      key: "bindings",
-      responsive: ["sm"] as Breakpoint[],
-      render: (_: unknown, row: RouteTemplate) => row.bindings.length,
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      render: (_: unknown, row: RouteTemplate) => (
+  const renderCard = (item: RouteTemplate) => (
+    <Card
+      size="small"
+      hoverable
+      title={item.name}
+      extra={
         <Space>
           <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
           </Tooltip>
-          <Popconfirm title="Delete this route template?" onConfirm={() => void handleDelete(row)}>
+          <Popconfirm title="Delete this route template?" onConfirm={() => void handleDelete(item)}>
             <Tooltip title="Delete">
               <Button size="small" danger icon={<DeleteOutlined />} />
             </Tooltip>
           </Popconfirm>
         </Space>
-      ),
-    },
-  ];
+      }
+    >
+      <Typography.Text type="secondary">
+        {item.slots.length} slots &middot; {item.bindings.length} bindings
+      </Typography.Text>
+    </Card>
+  );
 
   return (
     <Space direction="vertical" style={{ display: "flex" }} size={16}>
@@ -199,14 +191,7 @@ export default function RouteTemplatesPage() {
         </Tooltip>
       </Space>
 
-      <Table<RouteTemplate>
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        columns={columns}
-        pagination={false}
-        scroll={{ x: "max-content" }}
-      />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
 
       <Modal
         title={editing ? "Edit Route Template" : "Create Route Template"}

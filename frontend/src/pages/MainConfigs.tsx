@@ -1,10 +1,10 @@
 import {
   Button,
+  Card,
   Input,
   Modal,
   Popconfirm,
   Space,
-  Table,
   Tag,
   Tooltip,
   Typography,
@@ -13,7 +13,6 @@ import {
 import { BlockOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import MainConfigEditorDrawer from "@/pages/main-configs/MainConfigEditorDrawer";
-import type { Breakpoint } from "antd";
 import type {
   MainConfig,
   PreviewResponse,
@@ -23,6 +22,7 @@ import type {
 } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import useIsMobile from "@/hooks/useIsMobile";
+import CardGrid from "@/components/CardGrid";
 
 export default function MainConfigsPage() {
   const isMobile = useIsMobile();
@@ -118,59 +118,43 @@ export default function MainConfigsPage() {
     }
   };
 
-  const columns = [
-    {
-      title: "Name",
-      dataIndex: "name",
-      key: "name",
-    },
-    {
-      title: "Final Target",
-      key: "final_target",
-      responsive: ["sm"] as Breakpoint[],
-      render: (_: unknown, row: MainConfig) => (
-        <Tag color="blue">
-          {row.final_target_type === "group"
-            ? row.final_target_group_name ?? "group"
-            : row.final_target_type}
-        </Tag>
-      ),
-    },
-    {
-      title: "Enabled",
-      dataIndex: "enabled",
-      key: "enabled",
-      responsive: ["sm"] as Breakpoint[],
-      render: (value: boolean) => (
-        <Tag color={value ? "success" : "default"}>{value ? "on" : "off"}</Tag>
-      ),
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      render: (_: unknown, row: MainConfig) => (
+  const renderCard = (item: MainConfig) => (
+    <Card
+      size="small"
+      hoverable
+      title={item.name}
+      extra={
         <Space>
           <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
           </Tooltip>
           <Tooltip title="Duplicate">
-            <Button size="small" icon={<BlockOutlined />} onClick={() => openDuplicate(row)} />
+            <Button size="small" icon={<BlockOutlined />} onClick={() => openDuplicate(item)} />
           </Tooltip>
           <Tooltip title="Preview">
-            <Button size="small" icon={<EyeOutlined />} onClick={() => void handlePreview(row)} />
+            <Button size="small" icon={<EyeOutlined />} onClick={() => void handlePreview(item)} />
           </Tooltip>
           <Tooltip title="Copy URL">
-            <Button size="small" icon={<CopyOutlined />} onClick={() => void handleCopyArtifactLink(row)} />
+            <Button size="small" icon={<CopyOutlined />} onClick={() => void handleCopyArtifactLink(item)} />
           </Tooltip>
-          <Popconfirm title="Delete this main config?" onConfirm={() => void handleDelete(row)}>
+          <Popconfirm title="Delete this main config?" onConfirm={() => void handleDelete(item)}>
             <Tooltip title="Delete">
               <Button size="small" danger icon={<DeleteOutlined />} />
             </Tooltip>
           </Popconfirm>
         </Space>
-      ),
-    },
-  ];
+      }
+    >
+      <Space wrap size={4}>
+        <Tag color="blue">
+          {item.final_target_type === "group"
+            ? item.final_target_group_name ?? "group"
+            : item.final_target_type}
+        </Tag>
+        <Tag color={item.enabled ? "success" : "default"}>{item.enabled ? "on" : "off"}</Tag>
+      </Space>
+    </Card>
+  );
 
   return (
     <Space direction="vertical" style={{ display: "flex" }} size={16}>
@@ -183,14 +167,7 @@ export default function MainConfigsPage() {
         </Tooltip>
       </Space>
 
-      <Table<MainConfig>
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        columns={columns}
-        pagination={false}
-        scroll={{ x: "max-content" }}
-      />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
 
       <MainConfigEditorDrawer
         open={editorOpen}
