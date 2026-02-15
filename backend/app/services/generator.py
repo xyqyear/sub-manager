@@ -13,6 +13,7 @@ import yaml
 from app.config import settings
 from app.models import (
     MainConfig,
+    RouteTemplate,
     RuleSource,
     SubscriptionSource,
 )
@@ -22,6 +23,7 @@ from app.schemas.configs import (
     FilteredGroupPayload,
     ManualGroupPayload,
     RouteBindingPayload,
+    SlotMappingPayload,
 )
 from app.services.common import GenerationError, dedupe_keep_order, slugify_name, utc_now
 from app.services.refresh_loop import refresh_loop_manager
@@ -44,7 +46,8 @@ class GenerationInput(BaseModel):
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
-    route_bindings: list[RouteBindingPayload] = []
+    route_template_id: str | None = None
+    slot_mappings: list[SlotMappingPayload] = []
 
     @staticmethod
     def from_main_config(config: MainConfig, *, public_base_url: str) -> GenerationInput:
@@ -57,7 +60,8 @@ class GenerationInput(BaseModel):
             filtered_groups=config.filtered_groups,
             manual_groups=config.manual_groups,
             dialer_override_rules=config.dialer_override_rules,
-            route_bindings=config.route_bindings,
+            route_template_id=config.route_template_id,
+            slot_mappings=config.slot_mappings,
         )
 
     @staticmethod
@@ -71,7 +75,8 @@ class GenerationInput(BaseModel):
             filtered_groups=draft.filtered_groups,
             manual_groups=draft.manual_groups,
             dialer_override_rules=draft.dialer_override_rules,
-            route_bindings=draft.route_bindings,
+            route_template_id=draft.route_template_id,
+            slot_mappings=draft.slot_mappings,
         )
 
 
@@ -407,10 +412,10 @@ def apply_dialer_overrides(ctx: GenerationContext) -> None:
 # Step 7: build_route_groups_and_rules (pure)
 # ---------------------------------------------------------------------------
 
-def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, RuleSource]) -> None:
+def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, RuleSource], resolved_bindings: list[RouteBindingPayload]) -> None:
     provider_keys_used: set[str] = set()
 
-    for idx, binding in enumerate(sorted(ctx.source.route_bindings, key=lambda s: s.position), start=1):
+    for idx, binding in enumerate(sorted(resolved_bindings, key=lambda s: s.position), start=1):
         if binding.default_group_name not in ctx.available_non_route_groups | {"DIRECT", "REJECT"}:
             raise GenerationError(f"route default group not found: {binding.default_group_name}", 422)
 
@@ -540,13 +545,14 @@ def _generate_from_loaded_data(
     diagnostics: GenerationDiagnosticsData,
     ordered_sources: list[OrderedSource],
     rule_map: dict[str, RuleSource],
+    resolved_bindings: list[RouteBindingPayload],
 ) -> GenerationResult:
     ctx = GenerationContext(source=source, diagnostics=diagnostics)
     ctx.pool_result = build_proxy_pool_with_collision_names(ordered_sources)
     build_filtered_groups(ctx)
     build_manual_groups(ctx)
     apply_dialer_overrides(ctx)
-    build_route_groups_and_rules(ctx, rule_map)
+    build_route_groups_and_rules(ctx, rule_map, resolved_bindings)
     final_target = resolve_final_target(source, ctx.available_non_route_groups)
     ctx.rules.append(f"MATCH,{final_target}")
     all_groups = ctx.filtered_groups + ctx.manual_groups + ctx.route_groups
@@ -557,6 +563,46 @@ def _generate_from_loaded_data(
         source.base_config_yaml, final_proxies, proxy_group_dicts, rule_provider_dicts, ctx.rules,
     )
     return GenerationResult(yaml=rendered, diagnostics=diagnostics)
+
+
+# ---------------------------------------------------------------------------
+# Slot resolution: template + mappings -> RouteBindingPayload list
+# ---------------------------------------------------------------------------
+
+async def resolve_route_bindings(
+    db: AsyncSession,
+    route_template_id: str | None,
+    slot_mappings: list[SlotMappingPayload],
+) -> list[RouteBindingPayload]:
+    if not route_template_id:
+        return []
+
+    template = await db.get(RouteTemplate, route_template_id)
+    if template is None:
+        raise GenerationError(f"route template not found: {route_template_id}", 422)
+
+    slot_map = {m.slot_name: m.group_name for m in slot_mappings}
+
+    resolved: list[RouteBindingPayload] = []
+    for binding in template.bindings:
+        target = binding.default_target
+        if target not in ("DIRECT", "REJECT"):
+            mapped = slot_map.get(target)
+            if mapped is None:
+                raise GenerationError(
+                    f"slot '{target}' in template '{template.name}' has no mapping", 422
+                )
+            target = mapped
+        resolved.append(
+            RouteBindingPayload(
+                position=binding.position,
+                binding_name=binding.binding_name,
+                rule_source_id=binding.rule_source_id,
+                default_group_name=target,
+                no_resolve=binding.no_resolve,
+            )
+        )
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -609,11 +655,14 @@ async def generate_config_yaml(
         stale_rule_ids=[],
         warnings=[],
     )
+    resolved_bindings = await resolve_route_bindings(
+        db, source.route_template_id, source.slot_mappings,
+    )
     sub_ids_ordered, sub_map = await _fetch_subscriptions(db, source.filtered_groups)
-    rule_map = await _fetch_rule_sources(db, source.route_bindings)
+    rule_map = await _fetch_rule_sources(db, resolved_bindings)
     ordered_sources = await load_subscriptions(sub_ids_ordered, sub_map, diagnostics)
-    await check_rule_staleness(rule_map, source.route_bindings, diagnostics)
-    return _generate_from_loaded_data(source, diagnostics, ordered_sources, rule_map)
+    await check_rule_staleness(rule_map, resolved_bindings, diagnostics)
+    return _generate_from_loaded_data(source, diagnostics, ordered_sources, rule_map, resolved_bindings)
 
 
 async def render_rule_source_yaml(rule_source: RuleSource) -> str:

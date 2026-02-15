@@ -135,15 +135,6 @@ async def test_generation_flow_manual_sources(client, admin_headers):
                 }
             ],
             "dialer_override_rules": [],
-            "route_bindings": [
-                {
-                    "position": 1,
-                    "binding_name": "ROUTE-1",
-                    "rule_source_id": rule_id,
-                    "default_group_name": "FG-A",
-                    "no_resolve": False,
-                }
-            ],
         },
     )
     assert config_response.status_code == 200, config_response.text
@@ -151,7 +142,38 @@ async def test_generation_flow_manual_sources(client, admin_headers):
     config_id = config_data["id"]
 
     assert len(config_data["filtered_groups"]) == 1
-    assert len(config_data["route_bindings"]) == 1
+    assert config_data["route_template_id"] is None
+
+    # create route template and assign it
+    template_response = await client.post(
+        "/api/admin/route-templates",
+        headers=admin_headers,
+        json={
+            "name": "tmpl-1",
+            "slots": [{"name": "FG-A", "position": 1}],
+            "bindings": [
+                {
+                    "position": 1,
+                    "binding_name": "ROUTE-1",
+                    "rule_source_id": rule_id,
+                    "default_target": "FG-A",
+                    "no_resolve": False,
+                }
+            ],
+        },
+    )
+    assert template_response.status_code == 200, template_response.text
+    template_id = template_response.json()["id"]
+
+    update_response = await client.put(
+        f"/api/admin/main-configs/{config_id}",
+        headers=admin_headers,
+        json={
+            "route_template_id": template_id,
+            "slot_mappings": [{"slot_name": "FG-A", "group_name": "FG-A"}],
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
 
     artifact_response = await client.get(
         f"/api/public/configs/{config_id}/artifact",
@@ -199,6 +221,26 @@ async def test_copy_nodes_isolates_dialer_override(client, admin_headers):
     assert rule.status_code == 200, rule.text
     rule_id = rule.json()["id"]
 
+    template = await client.post(
+        "/api/admin/route-templates",
+        headers=admin_headers,
+        json={
+            "name": "copy-nodes-tmpl",
+            "slots": [{"name": "Direct", "position": 1}],
+            "bindings": [
+                {
+                    "position": 1,
+                    "binding_name": "Test",
+                    "rule_source_id": rule_id,
+                    "default_target": "Direct",
+                    "no_resolve": False,
+                }
+            ],
+        },
+    )
+    assert template.status_code == 200, template.text
+    template_id = template.json()["id"]
+
     config = await client.post(
         "/api/admin/main-configs",
         headers=admin_headers,
@@ -243,15 +285,8 @@ async def test_copy_nodes_isolates_dialer_override(client, admin_headers):
                     "dialer_group_name": "Direct",
                 }
             ],
-            "route_bindings": [
-                {
-                    "position": 1,
-                    "binding_name": "Test",
-                    "rule_source_id": rule_id,
-                    "default_group_name": "Direct",
-                    "no_resolve": False,
-                }
-            ],
+            "route_template_id": template_id,
+            "slot_mappings": [{"slot_name": "Direct", "group_name": "Direct"}],
         },
     )
     assert config.status_code == 200, config.text

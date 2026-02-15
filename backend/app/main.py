@@ -13,6 +13,7 @@ from app.config import settings
 from app.db.database import init_db
 from app.routers.admin.health import router as admin_health_router
 from app.routers.admin.main_configs import router as admin_main_configs_router
+from app.routers.admin.route_templates import router as admin_route_templates_router
 from app.routers.admin.rules import router as admin_rules_router
 from app.routers.admin.subscriptions import router as admin_subscriptions_router
 from app.routers.public.configs import router as public_configs_router
@@ -28,6 +29,7 @@ FRONTEND_STATIC_DIR = FRONTEND_DIST_DIR / "static"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
+    logger.info("Database initialized")
     await refresh_loop_manager.start()
     try:
         yield
@@ -47,6 +49,7 @@ api_app.add_middleware(
 api_app.include_router(admin_health_router)
 api_app.include_router(admin_subscriptions_router)
 api_app.include_router(admin_rules_router)
+api_app.include_router(admin_route_templates_router)
 api_app.include_router(admin_main_configs_router)
 api_app.include_router(public_configs_router)
 api_app.include_router(public_rules_router)

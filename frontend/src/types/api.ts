@@ -115,13 +115,35 @@ export interface MainConfig {
     filtered_group_name: string;
     dialer_group_name: string;
   }[];
-  route_bindings: {
-    position: number;
-    binding_name: string;
-    rule_source_id: string;
-    default_group_name: string;
-    no_resolve: boolean;
-  }[];
+  route_template_id: string | null;
+  slot_mappings: SlotMapping[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SlotMapping {
+  slot_name: string;
+  group_name: string;
+}
+
+export interface RouteTemplateSlot {
+  name: string;
+  position: number;
+}
+
+export interface RouteTemplateBinding {
+  position: number;
+  binding_name: string;
+  rule_source_id: string;
+  default_target: string;
+  no_resolve: boolean;
+}
+
+export interface RouteTemplate {
+  id: string;
+  name: string;
+  slots: RouteTemplateSlot[];
+  bindings: RouteTemplateBinding[];
   created_at: string;
   updated_at: string;
 }

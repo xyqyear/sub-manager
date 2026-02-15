@@ -482,23 +482,21 @@ class TestApplyDialerOverrides:
 # ---------------------------------------------------------------------------
 
 class TestBuildRouteGroupsAndRules:
-    def _base_ctx(self) -> tuple[GenerationContext, dict]:
-        source = _make_source_input(
-            config_id="cfg-1",
-            route_bindings=[
-                RouteBindingPayload(position=1, binding_name="Google", rule_source_id="rule-1", default_group_name="FG", no_resolve=False),
-            ],
-        )
+    def _base_ctx(self) -> tuple[GenerationContext, dict, list]:
+        bindings = [
+            RouteBindingPayload(position=1, binding_name="Google", rule_source_id="rule-1", default_group_name="FG", no_resolve=False),
+        ]
+        source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
         ctx.group_names_filtered = ["FG"]
         ctx.group_names_manual = []
         ctx.available_non_route_groups = {"FG"}
         rule = _make_rule_source()
-        return ctx, {"rule-1": rule}
+        return ctx, {"rule-1": rule}, bindings
 
     def test_happy_path(self):
-        ctx, rule_map = self._base_ctx()
-        build_route_groups_and_rules(ctx, rule_map)
+        ctx, rule_map, bindings = self._base_ctx()
+        build_route_groups_and_rules(ctx, rule_map, bindings)
         assert len(ctx.route_groups) == 1
         assert ctx.route_groups[0].name == "Google"
         assert len(ctx.rule_providers) == 1
@@ -506,71 +504,65 @@ class TestBuildRouteGroupsAndRules:
         assert "RULE-SET" in ctx.rules[0]
 
     def test_missing_rule_source(self):
-        ctx, _ = self._base_ctx()
+        ctx, _, bindings = self._base_ctx()
         with pytest.raises(GenerationError) as exc_info:
-            build_route_groups_and_rules(ctx, {})
+            build_route_groups_and_rules(ctx, {}, bindings)
         assert exc_info.value.status_code == 422
 
     def test_disabled_rule_source(self):
-        ctx, rule_map = self._base_ctx()
+        ctx, rule_map, bindings = self._base_ctx()
         rule_map["rule-1"].enabled = False
         with pytest.raises(GenerationError) as exc_info:
-            build_route_groups_and_rules(ctx, rule_map)
+            build_route_groups_and_rules(ctx, rule_map, bindings)
         assert exc_info.value.status_code == 422
 
     def test_no_cache(self):
-        ctx, rule_map = self._base_ctx()
+        ctx, rule_map, bindings = self._base_ctx()
         rule_map["rule-1"].cached_payload_lines_json = None
         with pytest.raises(GenerationError) as exc_info:
-            build_route_groups_and_rules(ctx, rule_map)
+            build_route_groups_and_rules(ctx, rule_map, bindings)
         assert exc_info.value.status_code == 409
 
     def test_no_resolve_flag(self):
-        source = _make_source_input(
-            config_id="cfg-1",
-            route_bindings=[
-                RouteBindingPayload(position=1, binding_name="China", rule_source_id="rule-1", default_group_name="DIRECT", no_resolve=True),
-            ],
-        )
+        bindings = [
+            RouteBindingPayload(position=1, binding_name="China", rule_source_id="rule-1", default_group_name="DIRECT", no_resolve=True),
+        ]
+        source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
         ctx.group_names_filtered = []
         ctx.group_names_manual = []
         ctx.available_non_route_groups = set()
         rule = _make_rule_source()
-        build_route_groups_and_rules(ctx, {"rule-1": rule})
+        build_route_groups_and_rules(ctx, {"rule-1": rule}, bindings)
         assert ctx.rules[0].endswith(",no-resolve")
 
     def test_provider_key_collision(self):
-        source = _make_source_input(
-            config_id="cfg-1",
-            route_bindings=[
-                RouteBindingPayload(position=1, binding_name="Google", rule_source_id="r1", default_group_name="DIRECT", no_resolve=False),
-                RouteBindingPayload(position=2, binding_name="Google", rule_source_id="r2", default_group_name="DIRECT", no_resolve=False),
-            ],
-        )
+        bindings = [
+            RouteBindingPayload(position=1, binding_name="Google", rule_source_id="r1", default_group_name="DIRECT", no_resolve=False),
+            RouteBindingPayload(position=2, binding_name="Google", rule_source_id="r2", default_group_name="DIRECT", no_resolve=False),
+        ]
+        source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
         ctx.available_non_route_groups = set()
         r1 = _make_rule_source(id="r1", name="R1")
         r2 = _make_rule_source(id="r2", name="R2")
-        build_route_groups_and_rules(ctx, {"r1": r1, "r2": r2})
+        build_route_groups_and_rules(ctx, {"r1": r1, "r2": r2}, bindings)
         keys = list(ctx.rule_providers.keys())
         assert len(keys) == 2
         assert keys[0] != keys[1]
         assert keys[1].endswith("_2")
 
     def test_route_group_member_order(self):
-        source = _make_source_input(
-            config_id="cfg-1",
-            route_bindings=[
-                RouteBindingPayload(position=1, binding_name="Route", rule_source_id="rule-1", default_group_name="MG", no_resolve=False),
-            ],
-        )
+        bindings = [
+            RouteBindingPayload(position=1, binding_name="Route", rule_source_id="rule-1", default_group_name="MG", no_resolve=False),
+        ]
+        source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
         ctx.group_names_filtered = ["FG"]
         ctx.group_names_manual = ["MG"]
         ctx.available_non_route_groups = {"FG", "MG"}
         rule = _make_rule_source()
-        build_route_groups_and_rules(ctx, {"rule-1": rule})
+        build_route_groups_and_rules(ctx, {"rule-1": rule}, bindings)
         members = ctx.route_groups[0].proxies
         # order: [default_group, DIRECT, manual..., filtered..., REJECT] deduped
         assert members[0] == "MG"
@@ -691,6 +683,9 @@ class TestGenerateFromLoadedData:
             ]),
         ]
         rule = _make_rule_source(id="r1")
+        resolved_bindings = [
+            RouteBindingPayload(position=1, binding_name="Route", rule_source_id="r1", default_group_name="FG", no_resolve=False),
+        ]
         source = _make_source_input(
             config_id="cfg-1",
             filtered_groups=[
@@ -705,12 +700,9 @@ class TestGenerateFromLoadedData:
                     members=[ManualGroupMemberPayload(member_type="filtered_group", member_ref="FG", position=1)],
                 ),
             ],
-            route_bindings=[
-                RouteBindingPayload(position=1, binding_name="Route", rule_source_id="r1", default_group_name="FG", no_resolve=False),
-            ],
         )
         diag = _make_diag()
-        result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule})
+        result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule}, resolved_bindings)
         assert isinstance(result, GenerationResult)
         parsed = yaml.safe_load(result.yaml)
         assert "proxies" in parsed
@@ -724,6 +716,9 @@ class TestGenerateFromLoadedData:
             ]),
         ]
         rule = _make_rule_source(id="r1")
+        resolved_bindings = [
+            RouteBindingPayload(position=1, binding_name="Route", rule_source_id="r1", default_group_name="Direct", no_resolve=False),
+        ]
         source = _make_source_input(
             config_id="cfg-1",
             filtered_groups=[
@@ -739,12 +734,9 @@ class TestGenerateFromLoadedData:
             dialer_override_rules=[
                 DialerOverridePayload(filtered_group_name="Relay", dialer_group_name="Direct"),
             ],
-            route_bindings=[
-                RouteBindingPayload(position=1, binding_name="Route", rule_source_id="r1", default_group_name="Direct", no_resolve=False),
-            ],
         )
         diag = _make_diag()
-        result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule})
+        result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule}, resolved_bindings)
         parsed = yaml.safe_load(result.yaml)
         proxy_map = {p["name"]: p for p in parsed["proxies"]}
         assert "shared" in proxy_map

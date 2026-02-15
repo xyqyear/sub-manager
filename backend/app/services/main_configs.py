@@ -8,6 +8,7 @@ import yaml
 
 from app.models import (
     MainConfig,
+    RouteTemplate,
     RuleSource,
     SubscriptionSource,
 )
@@ -21,7 +22,7 @@ from app.schemas.configs import (
     MainConfigUpdate,
     ManualGroupPayload,
     DialerOverridePayload,
-    RouteBindingPayload,
+    SlotMappingPayload,
 )
 from app.services.common import ServiceError
 from app.services.generator import (
@@ -58,12 +59,15 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
     await _assert_unique_config_name(db, payload.name)
     validate_base_yaml(payload.base_config_yaml)
 
-    if payload.filtered_groups or payload.route_bindings or payload.manual_groups or payload.dialer_override_rules:
+    if payload.filtered_groups or payload.manual_groups or payload.dialer_override_rules:
         validate_builder_shapes(
             payload.filtered_groups, payload.manual_groups,
-            payload.dialer_override_rules, payload.route_bindings,
+            payload.dialer_override_rules,
         )
-        await validate_builder_refs(db, payload.filtered_groups, payload.route_bindings)
+        await validate_builder_refs(db, payload.filtered_groups)
+
+    group_name_set = _collect_group_names(payload.filtered_groups, payload.manual_groups)
+    await validate_slot_mappings(db, payload.route_template_id, payload.slot_mappings, group_name_set)
 
     config = MainConfig(
         name=payload.name,
@@ -74,7 +78,8 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
         filtered_groups=payload.filtered_groups,
         manual_groups=payload.manual_groups,
         dialer_override_rules=payload.dialer_override_rules,
-        route_bindings=payload.route_bindings,
+        route_template_id=payload.route_template_id,
+        slot_mappings=payload.slot_mappings,
     )
 
     db.add(config)
@@ -103,19 +108,28 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
 
     builder_changed = any(
         getattr(payload, f) is not None
-        for f in ("filtered_groups", "manual_groups", "dialer_override_rules", "route_bindings")
+        for f in ("filtered_groups", "manual_groups", "dialer_override_rules")
     )
     if builder_changed:
         fg = payload.filtered_groups if payload.filtered_groups is not None else config.filtered_groups
         mg = payload.manual_groups if payload.manual_groups is not None else config.manual_groups
         dor = payload.dialer_override_rules if payload.dialer_override_rules is not None else config.dialer_override_rules
-        sb = payload.route_bindings if payload.route_bindings is not None else config.route_bindings
-        validate_builder_shapes(fg, mg, dor, sb)
-        await validate_builder_refs(db, fg, sb)
+        validate_builder_shapes(fg, mg, dor)
+        await validate_builder_refs(db, fg)
         config.filtered_groups = fg
         config.manual_groups = mg
         config.dialer_override_rules = dor
-        config.route_bindings = sb
+
+    route_changed = payload.route_template_id is not None or payload.slot_mappings is not None
+    if route_changed or builder_changed:
+        fg = config.filtered_groups
+        mg = config.manual_groups
+        rt_id = payload.route_template_id if payload.route_template_id is not None else config.route_template_id
+        sm = payload.slot_mappings if payload.slot_mappings is not None else config.slot_mappings
+        group_name_set = _collect_group_names(fg, mg)
+        await validate_slot_mappings(db, rt_id, sm, group_name_set)
+        config.route_template_id = rt_id
+        config.slot_mappings = sm
 
     db.add(config)
     await db.commit()
@@ -143,7 +157,6 @@ async def delete_main_config(db: AsyncSession, config: MainConfig) -> None:
 async def validate_builder_refs(
     db: AsyncSession,
     filtered_groups: list[FilteredGroupPayload],
-    route_bindings: list[RouteBindingPayload],
 ) -> None:
     subscription_ids = {
         rule.subscription_source_id
@@ -159,20 +172,11 @@ async def validate_builder_refs(
         if missing:
             raise ServiceError(f"unknown subscription_source_id: {sorted(missing)}", 422)
 
-    rule_ids = {item.rule_source_id for item in route_bindings}
-    if rule_ids:
-        result = await db.execute(select(RuleSource.id).where(RuleSource.id.in_(rule_ids)))
-        found = set(result.scalars().all())
-        missing = rule_ids - found
-        if missing:
-            raise ServiceError(f"unknown rule_source_id: {sorted(missing)}", 422)
-
 
 def validate_builder_shapes(
     filtered_groups: list[FilteredGroupPayload],
     manual_groups: list[ManualGroupPayload],
     dialer_override_rules: list[DialerOverridePayload],
-    route_bindings: list[RouteBindingPayload],
 ) -> None:
     filtered_names = [item.name for item in filtered_groups]
     manual_names = [item.name for item in manual_groups]
@@ -250,12 +254,38 @@ def validate_builder_shapes(
                 422,
             )
 
-    for binding in route_bindings:
-        if binding.default_group_name not in group_name_set | {"DIRECT", "REJECT"}:
-            raise ServiceError(
-                f"route default group not found: {binding.default_group_name}",
-                422,
-            )
+
+def _collect_group_names(
+    filtered_groups: list[FilteredGroupPayload],
+    manual_groups: list[ManualGroupPayload],
+) -> set[str]:
+    return {g.name for g in filtered_groups} | {g.name for g in manual_groups}
+
+
+async def validate_slot_mappings(
+    db: AsyncSession,
+    route_template_id: str | None,
+    slot_mappings: list[SlotMappingPayload],
+    group_name_set: set[str],
+) -> None:
+    if not route_template_id:
+        return
+
+    template = await db.get(RouteTemplate, route_template_id)
+    if template is None:
+        raise ServiceError(f"route template not found: {route_template_id}", 422)
+
+    slot_names = {s.name for s in template.slots}
+    mapped_slots = {m.slot_name for m in slot_mappings}
+    missing = slot_names - mapped_slots
+    if missing:
+        raise ServiceError(f"unmapped slots: {sorted(missing)}", 422)
+
+    for mapping in slot_mappings:
+        if mapping.slot_name not in slot_names:
+            raise ServiceError(f"slot mapping references unknown slot: {mapping.slot_name}", 422)
+        if mapping.group_name not in group_name_set | {"DIRECT", "REJECT"}:
+            raise ServiceError(f"slot mapping group not found: {mapping.group_name}", 422)
 
 
 async def preview_filtered_group_matches(

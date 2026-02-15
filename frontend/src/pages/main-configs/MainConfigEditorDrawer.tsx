@@ -27,6 +27,7 @@ import type {
   GroupMode,
   MainConfig,
   PreviewResponse,
+  RouteTemplate,
   RuleSourceListItem,
   SubscriptionSourceListItem,
 } from "@/types/api";
@@ -44,9 +45,12 @@ interface MainConfigEditorDrawerProps {
   mode: EditorMode;
   subscriptions: SubscriptionSourceListItem[];
   rules: RuleSourceListItem[];
+  routeTemplates: RouteTemplate[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }
+
+type SlotMappingFormValue = { slot_name: string; group_name: string };
 
 type EditorFormValues = {
   name: string;
@@ -54,7 +58,9 @@ type EditorFormValues = {
   enabled: boolean;
   final_target_type: FinalTargetType;
   final_target_group_name?: string;
-} & Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "route_bindings">;
+  route_template_id?: string;
+  slot_mappings: SlotMappingFormValue[];
+} & Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules">;
 
 const DEFAULT_BASE_YAML = "mixed-port: 7890\nmode: rule\n";
 
@@ -67,7 +73,8 @@ const defaultValues: EditorFormValues = {
   filtered_groups: [],
   manual_groups: [],
   dialer_override_rules: [],
-  route_bindings: [],
+  route_template_id: undefined,
+  slot_mappings: [],
 };
 
 const groupModeOptions: { label: string; value: GroupMode }[] = [
@@ -118,7 +125,7 @@ function MoveControls({ index, total, onMove }: MoveControlsProps) {
   );
 }
 
-function normalizeGroupFields(values: EditorFormValues, rules: RuleSourceListItem[]): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules" | "route_bindings"> {
+function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules"> & { route_template_id: string | null; slot_mappings: { slot_name: string; group_name: string }[] } {
   return {
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
@@ -150,12 +157,10 @@ function normalizeGroupFields(values: EditorFormValues, rules: RuleSourceListIte
       filtered_group_name: item.filtered_group_name,
       dialer_group_name: item.dialer_group_name,
     })),
-    route_bindings: (values.route_bindings ?? []).map((item, index) => ({
-      position: index + 1,
-      binding_name: item.binding_name?.trim() || (rules.find(r => r.id === item.rule_source_id)?.name ?? ""),
-      rule_source_id: item.rule_source_id,
-      default_group_name: item.default_group_name,
-      no_resolve: Boolean(item.no_resolve),
+    route_template_id: values.route_template_id || null,
+    slot_mappings: (values.slot_mappings ?? []).map((m) => ({
+      slot_name: m.slot_name,
+      group_name: m.group_name,
     })),
   };
 }
@@ -166,6 +171,7 @@ export default function MainConfigEditorDrawer({
   mode,
   subscriptions,
   rules,
+  routeTemplates,
   onClose,
   onSaved,
 }: MainConfigEditorDrawerProps) {
@@ -182,6 +188,12 @@ export default function MainConfigEditorDrawer({
   const finalTargetType = Form.useWatch("final_target_type", form);
   const filteredGroupsWatch = Form.useWatch("filtered_groups", form);
   const manualGroupsWatch = Form.useWatch("manual_groups", form);
+  const routeTemplateIdWatch = Form.useWatch("route_template_id", form);
+
+  const selectedTemplate = useMemo(
+    () => routeTemplates.find((t) => t.id === routeTemplateIdWatch) ?? null,
+    [routeTemplates, routeTemplateIdWatch],
+  );
 
   const nonRouteGroupOptions = useMemo(
     () => [
@@ -193,15 +205,6 @@ export default function MainConfigEditorDrawer({
         .map((item) => ({ label: item.name, value: item.name })),
     ],
     [filteredGroupsWatch, manualGroupsWatch],
-  );
-
-  const routeDefaultGroupOptions = useMemo(
-    () => [
-      { label: "DIRECT", value: "DIRECT" },
-      { label: "REJECT", value: "REJECT" },
-      ...nonRouteGroupOptions,
-    ],
-    [nonRouteGroupOptions],
   );
 
   const filteredGroupOptions = useMemo(
@@ -305,7 +308,8 @@ export default function MainConfigEditorDrawer({
         filtered_groups: config.filtered_groups,
         manual_groups: config.manual_groups,
         dialer_override_rules: config.dialer_override_rules,
-        route_bindings: config.route_bindings,
+        route_template_id: config.route_template_id ?? undefined,
+        slot_mappings: config.slot_mappings ?? [],
       };
       form.setFieldsValue(nextValues);
       queueFilteredGroupPreview(nextValues);
@@ -318,7 +322,7 @@ export default function MainConfigEditorDrawer({
     try {
       const values = form.getFieldsValue(true) as EditorFormValues;
       setPreviewing(true);
-      const groupFields = normalizeGroupFields(values, rules);
+      const groupFields = normalizeGroupFields(values);
       const payload = {
         base_config_yaml: values.base_config_yaml,
         final_target_type: values.final_target_type,
@@ -348,7 +352,7 @@ export default function MainConfigEditorDrawer({
       const values = await form.validateFields();
       setSaving(true);
 
-      const groupFields = normalizeGroupFields(values, rules);
+      const groupFields = normalizeGroupFields(values);
       const payload = {
         name: values.name,
         base_config_yaml: values.base_config_yaml,
@@ -900,91 +904,70 @@ export default function MainConfigEditorDrawer({
         </Form.List>
 
         <Divider />
-        <Typography.Title level={5}>Route Bindings</Typography.Title>
-        <Form.List name="route_bindings">
-          {(fields, { add, remove, move }) => (
-            <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field, index) => (
-                <Card key={field.key} size="small">
-                  <Row gutter={12}>
-                    <Col xs={24} sm={12} md={6}>
-                      <Form.Item
-                        name={[field.name, "rule_source_id"]}
-                        label="Rule Source"
-                        rules={[{ required: true }]}
-                      >
-                        <Select
-                          options={rules.map((item) => ({
-                            label: `${item.name} (${item.behavior})`,
-                            value: item.id,
-                          }))}
-                          showSearch
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Form.Item noStyle shouldUpdate>
-                        {() => {
-                          const ruleSourceId = form.getFieldValue([
-                            "route_bindings",
-                            field.name,
-                            "rule_source_id",
-                          ]) as string | undefined;
-                          const ruleName = rules.find(r => r.id === ruleSourceId)?.name;
-                          return (
-                            <Form.Item
-                              name={[field.name, "binding_name"]}
-                              label="Binding Name"
-                            >
-                              <Input placeholder={ruleName || "Same as rule source"} />
+        <Typography.Title level={5}>Route Template</Typography.Title>
+        <Row gutter={12}>
+          <Col xs={24} sm={12}>
+            <Form.Item name="route_template_id" label="Route Template">
+              <Select
+                allowClear
+                placeholder="No route template"
+                options={routeTemplates.map((t) => ({ label: t.name, value: t.id }))}
+                showSearch
+                onChange={() => {
+                  form.setFieldValue("slot_mappings", []);
+                }}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        {selectedTemplate && selectedTemplate.slots.length > 0 && (
+          <Card size="small" title="Slot Mappings">
+            <Form.List name="slot_mappings">
+              {(fields) => {
+                const currentMappings = form.getFieldValue("slot_mappings") as SlotMappingFormValue[] | undefined;
+                const needsSync = selectedTemplate.slots.length !== (currentMappings?.length ?? 0) ||
+                  selectedTemplate.slots.some((slot, i) => currentMappings?.[i]?.slot_name !== slot.name);
+
+                if (needsSync) {
+                  const existingMap = new Map((currentMappings ?? []).map((m) => [m.slot_name, m.group_name]));
+                  const synced = selectedTemplate.slots.map((slot) => ({
+                    slot_name: slot.name,
+                    group_name: existingMap.get(slot.name) ?? "",
+                  }));
+                  window.setTimeout(() => form.setFieldValue("slot_mappings", synced), 0);
+                }
+
+                return (
+                  <Space direction="vertical" style={{ display: "flex" }}>
+                    {fields.map((field, index) => {
+                      const slotName = selectedTemplate.slots[index]?.name ?? `Slot ${index + 1}`;
+                      return (
+                        <Row key={field.key} gutter={12} align="middle">
+                          <Col xs={8}>
+                            <Typography.Text strong>{slotName}</Typography.Text>
+                            <Form.Item name={[field.name, "slot_name"]} hidden>
+                              <Input />
                             </Form.Item>
-                          );
-                        }}
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={12} md={5}>
-                      <Form.Item
-                        name={[field.name, "default_group_name"]}
-                        label="Default Group"
-                        rules={[{ required: true }]}
-                      >
-                        <Select options={routeDefaultGroupOptions} showSearch />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} sm={6} md={3}>
-                      <Form.Item name={[field.name, "no_resolve"]} label="No Resolve" valuePropName="checked">
-                        <Switch />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} sm={6} md={4}>
-                      <Form.Item label=" ">
-                        <Space size={4}>
-                          <MoveControls index={index} total={fields.length} onMove={move} />
-                          <Tooltip title="Remove">
-                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
-                          </Tooltip>
-                        </Space>
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Card>
-              ))}
-              <Tooltip title="Add Route Binding">
-                <Button
-                  icon={<PlusOutlined />}
-                  onClick={() =>
-                    add({
-                      binding_name: "",
-                      rule_source_id: "",
-                      default_group_name: "",
-                      no_resolve: false,
-                    })
-                  }
-                />
-              </Tooltip>
-            </Space>
-          )}
-        </Form.List>
+                          </Col>
+                          <Col xs={16}>
+                            <Form.Item
+                              name={[field.name, "group_name"]}
+                              rules={[{ required: true, message: "Select a group" }]}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <Select options={nonRouteGroupOptions} showSearch placeholder="Select group" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      );
+                    })}
+                  </Space>
+                );
+              }}
+            </Form.List>
+          </Card>
+        )}
       </Form>
 
       <Modal

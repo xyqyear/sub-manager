@@ -64,11 +64,12 @@ Each rule source has a behavior type: `classical` (full rule syntax), `domain` (
 This is where everything comes together. A main config has:
 
 - A base YAML (ports, DNS, TUN settings, etc. — everything except proxies, groups, and rules)
-- Four builder field groups (filtered groups, manual groups, dialer overrides, route bindings) that visually compose proxy groups and routing rules (see below)
+- Three builder field groups (filtered groups, manual groups, dialer overrides) that visually compose proxy groups
+- A reference to a route template with slot mappings that define traffic routing rules (see below)
 
 ### The Builder
 
-The builder is the core of the product. It has four sections that work together to produce the `proxies`, `proxy-groups`, `rule-providers`, and `rules` sections of the final Clash Meta config.
+The builder is the core of the product. It has three sections that work together to produce the `proxies`, `proxy-groups`, `rule-providers`, and `rules` sections of the final Clash Meta config. Route bindings are defined separately in route templates.
 
 **Filtered Groups** — "Give me specific nodes from a subscription"
 
@@ -93,17 +94,18 @@ Assigns a `dialer-proxy` to all nodes in a filtered group, creating a relay chai
 - All nodes in "My VPS" group get `dialer-proxy: "US Transit"` → traffic goes: client → US Transit node → VPS node → destination
 - This hides the final destination from the transit provider and hides the transit from the destination
 
-**Route Bindings** — "Which rule goes to which group"
+**Route Templates** — "Reusable routing rule definitions with named slots"
 
-Each binding pairs a rule source with a proxy group name and a default target. Example:
+Route templates are standalone resources that define route bindings with named "slots" as placeholders for proxy groups. A template has:
 
-- Rule "Google" → group "Google", default to "Node Select"
-- Rule "Ad Block" → group "Ads", default to REJECT
-- Rule "China" → group "Domestic", default to DIRECT
+- **Slots**: Named placeholders (e.g., "Node Select", "Streaming") that represent proxy group positions
+- **Bindings**: Ordered list of route rules, each pairing a rule source with a binding name and a default target (a slot name, DIRECT, or REJECT)
 
-The order of route bindings determines rule matching priority in the generated config. A final implicit MATCH rule catches all remaining traffic, directed to DIRECT, REJECT, or a chosen group.
+Multiple main configs can reference the same route template. Each config provides **slot mappings** that map each slot name to an actual proxy group name from its filtered/manual groups.
 
 Each route binding generates a `select`-type proxy group whose members are: `[default_group, DIRECT, REJECT] + all manual groups + all filtered groups`, allowing the user to override the default at runtime in Clash Meta.
+
+The order of bindings determines rule matching priority in the generated config. A final implicit MATCH rule catches all remaining traffic, directed to DIRECT, REJECT, or a chosen group.
 
 ### Output
 
@@ -129,35 +131,46 @@ compose.yaml                       # single-service deployment
 .dockerignore
 backend/
   main.py                          # dev entrypoint (uvicorn, port 5678, reload)
+  alembic.ini                      # Alembic configuration
   app/
     main.py                        # FastAPI app factory, lifespan, router mounting
     config.py                      # pydantic-settings (env-driven)
     auth.py                        # bearer token dependency
     models.py                      # SQLAlchemy ORM models
-    db/database.py                 # async engine/session, init_db()
+    db/database.py                 # async engine/session, init_db() with Alembic
     routers/admin/                 # admin CRUD APIs (bearer protected)
       health.py                    # GET /api/admin/health
       subscriptions.py             # subscription CRUD + refresh
       rules.py                     # rule CRUD + refresh
+      route_templates.py           # route template CRUD
       main_configs.py              # config CRUD + preview + filtered-group-preview
     routers/public/
       configs.py                   # public artifact + rule-payload fetch
     schemas/                       # pydantic request/response models
       subscriptions.py
       rules.py
-      configs.py                   # MainConfigCreate/Update/Read, DraftPreviewRequest, PreviewWithDiagnosticsResponse, etc.
+      configs.py                   # MainConfigCreate/Update/Read, DraftPreviewRequest, etc.
+      route_templates.py           # RouteTemplateCreate/Update/Read, slot/binding payloads
     services/                      # business logic
       common.py                    # ServiceError, GenerationError, jitter, slugify, parsing
       subscriptions.py             # subscription CRUD + remote fetch + cache
       rules.py                     # rule CRUD + remote fetch + validation
+      route_templates.py           # route template CRUD + validation
       main_configs.py              # config CRUD + validation
       generator.py                 # YAML assembly engine
       refresh_loop.py              # in-process async background refresh
+  migrations/                      # Alembic migrations
+    env.py
+    versions/
+      001_initial.py               # baseline schema
+      002_route_templates.py       # route templates + data migration from route_bindings
   tests/
     conftest.py                    # test DB isolation (/tmp/sub_manager_test.sqlite3)
     test_admin_auth.py
     test_parsers.py
     test_generation_flow.py
+    test_generator_steps.py
+    test_migration.py
 
 frontend/
   vite.config.ts                   # port 3000, /api proxy -> :5678, @ alias -> src/
@@ -170,6 +183,7 @@ frontend/
       Login.tsx
       Subscriptions.tsx            # subscription CRUD UI
       Rules.tsx                    # rule CRUD UI
+      RouteTemplates.tsx           # route template CRUD UI
       MainConfigs.tsx              # config list + editor integration
       main-configs/
         MainConfigEditorDrawer.tsx # visual builder editor (all builder sections)
@@ -199,20 +213,29 @@ Fields: `id`, `name` (unique), `mode`, `enabled`, `remote_url`, `remote_auth_hea
 
 Corresponds to Stage 2 (traffic routing rules). Two modes (remote/manual). Each has a `behavior`: `classical`, `domain`, or `ipcidr`. Cached as `payload_lines` (list of strings). Only YAML format supported.
 
+### Route Templates (`route_template`)
+
+Standalone resource defining reusable route bindings with named slots. Multiple main configs can reference the same template.
+
+Fields: `id`, `name` (unique), `slots` (PydanticListType of `RouteTemplateSlotPayload`), `bindings` (PydanticListType of `RouteTemplateBindingPayload`), `created_at`, `updated_at`.
+
+Slots have `name` and `position`. Bindings have `position`, `binding_name`, `rule_source_id`, `default_target` (slot name, DIRECT, or REJECT), and `no_resolve`.
+
 ### Main Configs (`main_config`) + Builder Graph
 
 Corresponds to Stage 3 (the composition layer). A main config combines subscriptions + rules into a final output. Each config has:
 
 - `base_config_yaml`: base Clash settings (ports, DNS, TUN, etc.)
 - `final_target_type`: DIRECT / REJECT / group (for the trailing MATCH rule)
-- A **builder graph** stored as 4 JSON columns directly on `main_config`, using a `PydanticListType` TypeDecorator that serializes/deserializes via Pydantic `TypeAdapter`:
+- `route_template_id`: reference to a route template (nullable)
+- `slot_mappings`: PydanticListType mapping each template slot name to an actual proxy group name
+- A **builder graph** stored as 3 JSON columns directly on `main_config`, using a `PydanticListType` TypeDecorator that serializes/deserializes via Pydantic `TypeAdapter`:
 
 | Column                  | Pydantic Type                 | Purpose                                                                        |
 | ----------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
 | `filtered_groups`       | `list[FilteredGroupPayload]`  | Named proxy groups filtered by regex (each contains nested rules)              |
 | `manual_groups`         | `list[ManualGroupPayload]`    | Named groups referencing filtered/manual groups (each contains nested members) |
 | `dialer_override_rules` | `list[DialerOverridePayload]` | Assigns `dialer-proxy` to proxies in a filtered group                          |
-| `route_bindings`        | `list[RouteBindingPayload]`   | Binds a rule source to a route proxy-group                                     |
 
 All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps. Lists are ordered by `position` field within the JSON arrays.
 
@@ -220,8 +243,9 @@ All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` t
 
 The generation pipeline uses a single `GenerationInput` model and `generate_config_yaml()` entry point for both saved configs and draft previews. Callers construct `GenerationInput` from either a `MainConfig` ORM object or a `DraftPreviewRequest` schema.
 
-1. **Fetch subscriptions** - `_fetch_subscriptions()` derives subscription IDs from filtered group rules (first-seen order), fetches `SubscriptionSource` rows from DB.
-2. **Fetch rule sources** - `_fetch_rule_sources()` fetches `RuleSource` rows referenced by route bindings.
+1. **Resolve route bindings** - `resolve_route_bindings()` fetches the route template (if any), maps slot names to group names via slot_mappings, and produces a list of `RouteBindingPayload` for the pipeline.
+2. **Fetch subscriptions** - `_fetch_subscriptions()` derives subscription IDs from filtered group rules (first-seen order), fetches `SubscriptionSource` rows from DB.
+3. **Fetch rule sources** - `_fetch_rule_sources()` fetches `RuleSource` rows referenced by resolved route bindings.
 3. **Load subscriptions** - Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
 4. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
 5. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
@@ -258,6 +282,10 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 | POST   | `/api/admin/rules/{id}/refresh`                   | Sync refresh                        |
 | POST   | `/api/admin/rules/{id}/refresh-async`             | Async refresh                       |
 | DELETE | `/api/admin/rules/{id}`                           | Delete rule                         |
+| GET    | `/api/admin/route-templates`                      | List route templates                |
+| POST   | `/api/admin/route-templates`                      | Create route template               |
+| PUT    | `/api/admin/route-templates/{id}`                 | Update route template               |
+| DELETE | `/api/admin/route-templates/{id}`                 | Delete route template (protected)   |
 | GET    | `/api/admin/main-configs`                         | List configs                        |
 | POST   | `/api/admin/main-configs`                         | Create config                       |
 | PUT    | `/api/admin/main-configs/{id}`                    | Update config                       |
@@ -276,15 +304,22 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 ## Key Backend Schemas
 
 ```python
+# RouteTemplateCreate (POST /api/admin/route-templates)
+# RouteTemplateUpdate (PUT /api/admin/route-templates/{id}) — all fields optional
+# RouteTemplateRead — response model
+RouteTemplate fields:
+  name, slots: [{name, position}], bindings: [{position, binding_name, rule_source_id, default_target, no_resolve}]
+
 # MainConfigCreate (POST /api/admin/main-configs)
 # MainConfigUpdate (PUT /api/admin/main-configs/{id}) — all fields optional
 # MainConfigRead — response model, includes all fields below
 MainConfig fields:
   name, base_config_yaml, enabled, final_target_type, final_target_group_name
+  route_template_id: str | None
+  slot_mappings: [{slot_name, group_name}]
   filtered_groups: [{name, position, group_mode, test_url?, test_interval_sec?, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
   manual_groups: [{name, position, group_mode, test_url?, test_interval_sec?, members: [{member_type, member_ref, position}]}]
   dialer_override_rules: [{filtered_group_name, dialer_group_name}]
-  route_bindings: [{position, binding_name, rule_source_id, default_group_name, no_resolve}]
 
 # Draft preview (POST /api/admin/main-configs/preview-draft)
 DraftPreviewRequest:
@@ -292,10 +327,11 @@ DraftPreviewRequest:
   final_target_type: FinalTargetType
   final_target_group_name: str | None
   config_id: str | None
-  filtered_groups: list[FilteredGroupPayload]  # same shape as MainConfig fields
+  route_template_id: str | None
+  slot_mappings: list[SlotMappingPayload]
+  filtered_groups: list[FilteredGroupPayload]
   manual_groups: list[ManualGroupPayload]
   dialer_override_rules: list[DialerOverridePayload]
-  route_bindings: list[RouteBindingPayload]
 
 # Preview response
 PreviewWithDiagnosticsResponse:
@@ -305,7 +341,10 @@ PreviewWithDiagnosticsResponse:
 # Generator input (internal, not an API schema)
 GenerationInput:
   config_id, base_config_yaml, final_target_type, final_target_group_name, public_base_url
-  filtered_groups, manual_groups, dialer_override_rules, route_bindings
+  route_template_id, slot_mappings, filtered_groups, manual_groups, dialer_override_rules
+
+# RouteBindingPayload (internal, produced by resolve_route_bindings at generation time)
+  position, binding_name, rule_source_id, default_group_name, no_resolve
 
 # Type enums
 GroupMode: "select" | "fallback" | "url-test"
@@ -340,12 +379,12 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 ## Frontend Patterns
 
 - Auth: token in `localStorage` key `sub_manager_admin_token`. Axios interceptor adds bearer header.
-- Routes: `/login`, `/subscriptions`, `/rules`, `/configs` (guarded).
-- Builder editor: `MainConfigEditorDrawer.tsx` - visual form with collapsible sections for all builder parts.
+- Routes: `/login`, `/subscriptions`, `/rules`, `/routes`, `/configs` (guarded).
+- Builder editor: `MainConfigEditorDrawer.tsx` - visual form with collapsible sections for filtered groups, manual groups, dialer overrides, and route template selection with slot mappings.
 - Frontend dev proxy: Vite proxies `/api` to `http://localhost:5678`.
 - Path alias: `@` -> `frontend/src/`.
 
 ## Known Gaps / Technical Notes
 
-- No Alembic migrations in use; runtime uses `create_all()`.
+- Alembic manages schema migrations. On first run: `create_all()` + stamp head. On existing DBs without Alembic: stamps baseline + upgrades. On existing DBs with Alembic: runs pending upgrades.
 - Plaintext admin_token by design.

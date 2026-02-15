@@ -17,6 +17,7 @@ import type { Breakpoint } from "antd";
 import type {
   MainConfig,
   PreviewResponse,
+  RouteTemplate,
   RuleSourceListItem,
   SubscriptionSourceListItem,
 } from "@/types/api";
@@ -28,6 +29,7 @@ export default function MainConfigsPage() {
   const [items, setItems] = useState<MainConfig[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionSourceListItem[]>([]);
   const [rules, setRules] = useState<RuleSourceListItem[]>([]);
+  const [routeTemplates, setRouteTemplates] = useState<RouteTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MainConfig | null>(null);
@@ -40,15 +42,17 @@ export default function MainConfigsPage() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [configsResponse, subscriptionsResponse, rulesResponse] = await Promise.all([
+      const [configsResponse, subscriptionsResponse, rulesResponse, routeTemplatesResponse] = await Promise.all([
         api.get<MainConfig[]>("/admin/main-configs"),
         api.get<SubscriptionSourceListItem[]>("/admin/subscriptions"),
         api.get<RuleSourceListItem[]>("/admin/rules"),
+        api.get<RouteTemplate[]>("/admin/route-templates"),
       ]);
 
       setItems(configsResponse.data);
       setSubscriptions(subscriptionsResponse.data);
       setRules(rulesResponse.data);
+      setRouteTemplates(routeTemplatesResponse.data);
     } catch (error) {
       void message.error(errorDetail(error));
     } finally {
@@ -194,6 +198,7 @@ export default function MainConfigsPage() {
         mode={editorMode}
         subscriptions={subscriptions}
         rules={rules}
+        routeTemplates={routeTemplates}
         onClose={closeEditor}
         onSaved={fetchAll}
       />

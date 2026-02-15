@@ -18,6 +18,7 @@ from app.schemas.configs import (
 from app.services.common import GenerationError, ServiceError, get_public_base_url, to_http_error
 from app.services.generator import GenerationInput, generate_config_yaml
 from app.services.main_configs import (
+    _collect_group_names,
     create_main_config,
     delete_main_config,
     get_main_config_or_404,
@@ -27,6 +28,7 @@ from app.services.main_configs import (
     validate_base_yaml,
     validate_builder_refs,
     validate_builder_shapes,
+    validate_slot_mappings,
 )
 
 router = APIRouter(
@@ -77,9 +79,11 @@ async def preview_draft_endpoint(
         validate_base_yaml(payload.base_config_yaml)
         validate_builder_shapes(
             payload.filtered_groups, payload.manual_groups,
-            payload.dialer_override_rules, payload.route_bindings,
+            payload.dialer_override_rules,
         )
-        await validate_builder_refs(db, payload.filtered_groups, payload.route_bindings)
+        await validate_builder_refs(db, payload.filtered_groups)
+        group_name_set = _collect_group_names(payload.filtered_groups, payload.manual_groups)
+        await validate_slot_mappings(db, payload.route_template_id, payload.slot_mappings, group_name_set)
         result = await generate_config_yaml(
             db,
             GenerationInput.from_draft(payload, public_base_url=get_public_base_url(request)),

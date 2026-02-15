@@ -12,6 +12,7 @@ import {
 } from "react-router-dom";
 import LoginPage from "@/pages/Login";
 import MainConfigsPage from "@/pages/MainConfigs";
+import RouteTemplatesPage from "@/pages/RouteTemplates";
 import RulesPage from "@/pages/Rules";
 import SubscriptionsPage from "@/pages/Subscriptions";
 import { clearAdminToken, getAdminToken } from "@/utils/api";
@@ -60,6 +61,7 @@ function ProtectedAppLayout() {
           items={[
             { key: "/subscriptions", label: <Link to="/subscriptions">Subscriptions</Link> },
             { key: "/rules", label: <Link to="/rules">Rules</Link> },
+            { key: "/routes", label: <Link to="/routes">Routes</Link> },
             { key: "/configs", label: <Link to="/configs">Configs</Link> },
           ]}
           style={{ flex: 1, minWidth: 0, background: "transparent" }}
@@ -73,6 +75,7 @@ function ProtectedAppLayout() {
         <Routes>
           <Route path="/subscriptions" element={<SubscriptionsPage />} />
           <Route path="/rules" element={<RulesPage />} />
+          <Route path="/routes" element={<RouteTemplatesPage />} />
           <Route path="/configs" element={<MainConfigsPage />} />
           <Route path="*" element={<Navigate to="/subscriptions" replace />} />
         </Routes>

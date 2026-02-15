@@ -15,6 +15,7 @@ from app.db.database import AsyncSessionLocal, engine, init_db
 from app.main import app
 from app.models import (
     MainConfig,
+    RouteTemplate,
     RuleSource,
     SubscriptionSource,
 )
@@ -49,6 +50,7 @@ async def admin_headers() -> dict[str, str]:
 async def clean_db() -> None:
     async with AsyncSessionLocal() as db:
         await db.execute(delete(MainConfig))
+        await db.execute(delete(RouteTemplate))
         await db.execute(delete(RuleSource))
         await db.execute(delete(SubscriptionSource))
         await db.commit()

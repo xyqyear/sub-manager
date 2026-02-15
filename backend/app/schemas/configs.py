@@ -12,6 +12,11 @@ GroupMode = Literal["select", "fallback", "url-test"]
 MemberType = Literal["filtered_group", "manual_group"]
 
 
+class SlotMappingPayload(BaseModel):
+    slot_name: str
+    group_name: str
+
+
 class MainConfigCreate(BaseModel):
     name: str
     base_config_yaml: str
@@ -21,7 +26,8 @@ class MainConfigCreate(BaseModel):
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
-    route_bindings: list[RouteBindingPayload] = []
+    route_template_id: str | None = None
+    slot_mappings: list[SlotMappingPayload] = []
 
 
 class MainConfigUpdate(BaseModel):
@@ -33,7 +39,8 @@ class MainConfigUpdate(BaseModel):
     filtered_groups: list[FilteredGroupPayload] | None = None
     manual_groups: list[ManualGroupPayload] | None = None
     dialer_override_rules: list[DialerOverridePayload] | None = None
-    route_bindings: list[RouteBindingPayload] | None = None
+    route_template_id: str | None = None
+    slot_mappings: list[SlotMappingPayload] | None = None
 
 
 class MainConfigRead(BaseModel):
@@ -48,7 +55,8 @@ class MainConfigRead(BaseModel):
     filtered_groups: list[FilteredGroupPayload]
     manual_groups: list[ManualGroupPayload]
     dialer_override_rules: list[DialerOverridePayload]
-    route_bindings: list[RouteBindingPayload]
+    route_template_id: str | None
+    slot_mappings: list[SlotMappingPayload]
     created_at: UtcDatetime
     updated_at: UtcDatetime
 
@@ -152,4 +160,5 @@ class DraftPreviewRequest(BaseModel):
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
-    route_bindings: list[RouteBindingPayload] = []
+    route_template_id: str | None = None
+    slot_mappings: list[SlotMappingPayload] = []

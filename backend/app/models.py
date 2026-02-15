@@ -21,6 +21,11 @@ from app.schemas.configs import (
     FilteredGroupPayload,
     ManualGroupPayload,
     RouteBindingPayload,
+    SlotMappingPayload,
+)
+from app.schemas.route_templates import (
+    RouteTemplateBindingPayload,
+    RouteTemplateSlotPayload,
 )
 from app.services.common import utc_now
 
@@ -161,6 +166,24 @@ class MainConfig(Base, TimestampMixin):
     dialer_override_rules: Mapped[list[DialerOverridePayload]] = mapped_column(
         PydanticListType(DialerOverridePayload), default=list, nullable=False
     )
-    route_bindings: Mapped[list[RouteBindingPayload]] = mapped_column(
-        PydanticListType(RouteBindingPayload), default=list, nullable=False
+    route_template_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    slot_mappings: Mapped[list[SlotMappingPayload]] = mapped_column(
+        PydanticListType(SlotMappingPayload), default=list, nullable=False
+    )
+
+
+class RouteTemplate(Base, TimestampMixin):
+    __tablename__ = "route_template"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    slots: Mapped[list[RouteTemplateSlotPayload]] = mapped_column(
+        PydanticListType(RouteTemplateSlotPayload), default=list, nullable=False
+    )
+    bindings: Mapped[list[RouteTemplateBindingPayload]] = mapped_column(
+        PydanticListType(RouteTemplateBindingPayload), default=list, nullable=False
     )
