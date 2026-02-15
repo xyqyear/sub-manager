@@ -131,7 +131,7 @@ export default function RouteTemplatesPage() {
         slots: (values.slots ?? []).map((s, i) => ({ name: s.name, position: i + 1 })),
         bindings: (values.bindings ?? []).map((b, i) => ({
           position: i + 1,
-          binding_name: b.binding_name,
+          binding_name: b.binding_name?.trim() || (rules.find((r) => r.id === b.rule_source_id)?.name ?? ""),
           rule_source_id: b.rule_source_id,
           default_target: b.default_target,
           no_resolve: Boolean(b.no_resolve),
@@ -269,8 +269,16 @@ export default function RouteTemplatesPage() {
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={6}>
-                        <Form.Item name={[field.name, "binding_name"]} label="Binding Name" rules={[{ required: true }]}>
-                          <Input />
+                        <Form.Item noStyle shouldUpdate>
+                          {() => {
+                            const ruleSourceId = form.getFieldValue(["bindings", field.name, "rule_source_id"]) as string | undefined;
+                            const ruleName = rules.find((r) => r.id === ruleSourceId)?.name;
+                            return (
+                              <Form.Item name={[field.name, "binding_name"]} label="Binding Name">
+                                <Input placeholder={ruleName || "Same as rule source"} />
+                              </Form.Item>
+                            );
+                          }}
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={5}>
