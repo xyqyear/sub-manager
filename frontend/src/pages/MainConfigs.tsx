@@ -121,7 +121,7 @@ export default function MainConfigsPage() {
   const renderCard = (item: MainConfig) => (
     <Card
       size="small"
-      hoverable
+
       title={item.name}
       extra={
         <Space>

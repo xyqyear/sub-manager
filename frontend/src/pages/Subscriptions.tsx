@@ -200,7 +200,7 @@ export default function SubscriptionsPage() {
     return (
       <Card
         size="small"
-        hoverable
+
         title={item.name}
         extra={
           <Space>

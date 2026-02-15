@@ -159,7 +159,7 @@ export default function RouteTemplatesPage() {
   const renderCard = (item: RouteTemplate) => (
     <Card
       size="small"
-      hoverable
+
       title={item.name}
       extra={
         <Space>

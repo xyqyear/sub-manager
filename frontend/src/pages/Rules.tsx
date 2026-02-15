@@ -257,7 +257,7 @@ export default function RulesPage() {
   const renderCard = (item: RuleSourceListItem) => (
     <Card
       size="small"
-      hoverable
+
       title={item.name}
       extra={
         <Space>
