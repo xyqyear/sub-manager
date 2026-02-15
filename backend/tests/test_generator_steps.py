@@ -28,6 +28,7 @@ from app.services.generator import (
     ProxyGroupObj,
     ProxyPoolResult,
     _generate_from_loaded_data,
+    _is_stale,
     apply_dialer_overrides,
     build_filtered_groups,
     build_manual_groups,
@@ -750,3 +751,26 @@ class TestGenerateFromLoadedData:
         assert "shared [Relay]" in proxy_map
         assert "dialer-proxy" not in proxy_map["shared"]
         assert proxy_map["shared [Relay]"]["dialer-proxy"] == "Direct"
+
+
+# ---------------------------------------------------------------------------
+# _is_stale: naive vs aware datetime regression
+# ---------------------------------------------------------------------------
+
+class TestIsStale:
+    def test_none_is_not_stale(self):
+        assert _is_stale(None) is False
+
+    def test_aware_past_is_stale(self):
+        assert _is_stale(datetime.now(UTC) - timedelta(hours=1)) is True
+
+    def test_aware_future_is_not_stale(self):
+        assert _is_stale(datetime.now(UTC) + timedelta(hours=1)) is False
+
+    def test_naive_past_does_not_crash(self):
+        naive = datetime(2000, 1, 1)
+        assert _is_stale(naive) is True
+
+    def test_naive_future_does_not_crash(self):
+        naive = datetime(2099, 1, 1)
+        assert _is_stale(naive) is False

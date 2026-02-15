@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 import re
 from typing import Any
 from pydantic import BaseModel, ConfigDict
@@ -138,6 +138,8 @@ class GenerationContext:
 def _is_stale(next_refresh_at: datetime | None) -> bool:
     if next_refresh_at is None:
         return False
+    if next_refresh_at.tzinfo is None:
+        next_refresh_at = next_refresh_at.replace(tzinfo=UTC)
     return next_refresh_at <= utc_now()
 
 

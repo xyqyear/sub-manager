@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 import uuid
 
@@ -46,18 +46,28 @@ class PydanticListType(TypeDecorator):
         return self._adapter.validate_python(value)
 
 
+class TZDateTime(TypeDecorator):
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_result_value(self, value: Any, dialect: Any) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
+
+
 class Base(DeclarativeBase):
     pass
 
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        TZDateTime(),
         default=utc_now,
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        TZDateTime(),
         default=utc_now,
         onupdate=utc_now,
         nullable=False,
@@ -81,8 +91,8 @@ class SubscriptionSource(Base, TimestampMixin):
 
     auto_update: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     update_interval_sec: Mapped[int] = mapped_column(Integer, default=3600, nullable=False)
-    next_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    last_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
 
     last_status: Mapped[str] = mapped_column(String(16), default="never", nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -114,8 +124,8 @@ class RuleSource(Base, TimestampMixin):
 
     auto_update: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     update_interval_sec: Mapped[int] = mapped_column(Integer, default=3600, nullable=False)
-    next_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    last_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
 
     last_status: Mapped[str] = mapped_column(String(16), default="never", nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
