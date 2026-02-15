@@ -64,8 +64,11 @@ async def test_filtered_group_preview_endpoint_uses_backend_logic(client, admin_
     groups = data["groups"]
     assert len(groups) == 1
     assert groups[0]["name"] == "HK"
-    assert groups[0]["issues"] == []
-    assert groups[0]["matched_proxy_names"] == ["hk-node", "hk-node@sub-2"]
+    assert len(groups[0]["rule_results"]) == 2
+    assert groups[0]["rule_results"][0]["matched_proxy_names"] == ["hk-node"]
+    assert groups[0]["rule_results"][0]["issue"] is None
+    assert groups[0]["rule_results"][1]["matched_proxy_names"] == ["hk-node@sub-2"]
+    assert groups[0]["rule_results"][1]["issue"] is None
 
 
 @pytest.mark.asyncio

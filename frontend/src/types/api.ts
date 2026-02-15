@@ -135,10 +135,14 @@ export interface PreviewResponse {
   };
 }
 
+export interface FilteredGroupPreviewRuleResult {
+  matched_proxy_names: string[];
+  issue: string | null;
+}
+
 export interface FilteredGroupPreviewItem {
   name: string;
-  matched_proxy_names: string[];
-  issues: string[];
+  rule_results: FilteredGroupPreviewRuleResult[];
 }
 
 export interface FilteredGroupPreviewResponse {

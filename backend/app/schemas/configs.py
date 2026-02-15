@@ -114,10 +114,14 @@ class FilteredGroupPreviewRequest(BaseModel):
     filtered_groups: list[FilteredGroupPreviewGroupPayload] = []
 
 
+class FilteredGroupPreviewRuleResult(BaseModel):
+    matched_proxy_names: list[str]
+    issue: str | None = None
+
+
 class FilteredGroupPreviewItem(BaseModel):
     name: str
-    matched_proxy_names: list[str]
-    issues: list[str]
+    rule_results: list[FilteredGroupPreviewRuleResult]
 
 
 class FilteredGroupPreviewResponse(BaseModel):

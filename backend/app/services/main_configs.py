@@ -16,18 +16,17 @@ from app.schemas.configs import (
     FilteredGroupPreviewItem,
     FilteredGroupPreviewRequest,
     FilteredGroupPreviewResponse,
+    FilteredGroupPreviewRuleResult,
     MainConfigCreate,
     MainConfigUpdate,
     ManualGroupPayload,
     DialerOverridePayload,
     RouteBindingPayload,
 )
-from app.services.common import ServiceError, dedupe_keep_order
+from app.services.common import ServiceError
 from app.services.generator import (
-    FilteredRuleMatch,
     OrderedSource,
     build_proxy_pool_with_collision_names,
-    match_filtered_rules_on_proxies,
 )
 
 
@@ -53,11 +52,6 @@ def validate_base_yaml(base_config_yaml: str) -> None:
     if not isinstance(parsed, dict):
         raise ServiceError("base_config_yaml must be a YAML object", 422)
 
-
-def _normalize_position(value: int | None, fallback: int) -> int:
-    if value is None:
-        return fallback
-    return value
 
 
 async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> MainConfig:
@@ -305,62 +299,53 @@ async def preview_filtered_group_matches(
     preview_items: list[FilteredGroupPreviewItem] = []
     for group_index, group in enumerate(payload.filtered_groups):
         group_name = group.name or f"Filtered Group #{group_index + 1}"
-        valid_rules: list[FilteredRuleMatch] = []
-        issues: list[str] = []
+        rule_results: list[FilteredGroupPreviewRuleResult] = []
 
-        ordered_rules = sorted(
-            list(enumerate(group.rules)),
-            key=lambda item: _normalize_position(item[1].position, item[0] + 1),
-        )
-        for _, rule in ordered_rules:
+        for rule in group.rules:
             source_id = rule.subscription_source_id
             if not source_id:
-                issues.append("Rule subscription is required.")
+                rule_results.append(FilteredGroupPreviewRuleResult(matched_proxy_names=[], issue="Rule subscription is required."))
                 continue
 
             source = subscription_map.get(source_id)
             if source is None:
-                issues.append(f"Subscription not found: {source_id}")
+                rule_results.append(FilteredGroupPreviewRuleResult(matched_proxy_names=[], issue=f"Subscription not found: {source_id}"))
                 continue
             if not source.enabled:
-                issues.append(f"Subscription disabled: {source.name}")
+                rule_results.append(FilteredGroupPreviewRuleResult(matched_proxy_names=[], issue=f"Subscription disabled: {source.name}"))
                 continue
             if not source.cached_proxies_json:
-                issues.append(f"Subscription has no cached proxies: {source.name}")
+                rule_results.append(FilteredGroupPreviewRuleResult(matched_proxy_names=[], issue=f"Subscription has no cached proxies: {source.name}"))
                 continue
 
             regex_pattern = (rule.regex_pattern or "").strip()
             if not regex_pattern:
-                issues.append("Regex pattern is required.")
+                rule_results.append(FilteredGroupPreviewRuleResult(matched_proxy_names=[], issue="Regex pattern is required."))
                 continue
 
             try:
-                re.compile(
+                compiled = re.compile(
                     regex_pattern,
                     re.IGNORECASE if "i" in rule.regex_flags else 0,
                 )
             except re.error as exc:
-                issues.append(f"Invalid regex {regex_pattern}: {exc}")
+                rule_results.append(FilteredGroupPreviewRuleResult(matched_proxy_names=[], issue=f"Invalid regex {regex_pattern}: {exc}"))
                 continue
 
-            valid_rules.append(
-                FilteredRuleMatch(
-                    source_id=source_id,
-                    regex_pattern=regex_pattern,
-                    regex_flags=rule.regex_flags,
-                )
-            )
+            matched: list[str] = []
+            source_proxies = proxies_by_source.get(source_id, [])
+            for proxy in source_proxies:
+                final_name = proxy.get("name", "")
+                raw_name = proxy.get("__raw_name", final_name)
+                if compiled.search(final_name) or compiled.search(raw_name):
+                    matched.append(final_name)
 
-        matched_proxy_names = match_filtered_rules_on_proxies(
-            valid_rules,
-            proxies_by_source,
-        )
+            rule_results.append(FilteredGroupPreviewRuleResult(matched_proxy_names=matched))
 
         preview_items.append(
             FilteredGroupPreviewItem(
                 name=group_name,
-                matched_proxy_names=matched_proxy_names,
-                issues=dedupe_keep_order(issues),
+                rule_results=rule_results,
             )
         )
 

@@ -261,8 +261,10 @@ export default function MainConfigEditorDrawer({
         setFilteredGroupPreviews(
           filteredGroups.map((group, index) => ({
             name: group.name || `Filtered Group #${index + 1}`,
-            matched_proxy_names: [],
-            issues: [detail],
+            rule_results: (group.rules ?? []).map(() => ({
+              matched_proxy_names: [],
+              issue: detail,
+            })),
           })),
         );
       }
@@ -597,6 +599,25 @@ export default function MainConfigEditorDrawer({
                                         </Form.Item>
                                       </Col>
                                     </Row>
+                                    {(() => {
+                                      const ruleResult = filteredGroupPreviews[field.name]?.rule_results?.[ruleField.name];
+                                      if (!ruleResult) return null;
+                                      return (
+                                        <div style={{ marginTop: 8 }}>
+                                          {ruleResult.issue ? (
+                                            <Alert type="warning" showIcon message={ruleResult.issue} style={{ marginBottom: 4 }} />
+                                          ) : ruleResult.matched_proxy_names.length > 0 ? (
+                                            <Space wrap>
+                                              {ruleResult.matched_proxy_names.map((name) => (
+                                                <Tag key={name}>{name}</Tag>
+                                              ))}
+                                            </Space>
+                                          ) : (
+                                            <Typography.Text type="secondary">No matched proxies</Typography.Text>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </Card>
                                 ))}
                                 <Tooltip title="Add Filter Rule">
@@ -615,30 +636,6 @@ export default function MainConfigEditorDrawer({
                               </Space>
                             )}
                           </Form.List>
-
-                          <Divider style={{ margin: "12px 0" }} />
-                          <Space direction="vertical" style={{ display: "flex" }}>
-                            <Typography.Text strong>
-                              Matched Proxies Preview
-                            </Typography.Text>
-                            {filteredGroupPreviews[field.name]?.issues.length ? (
-                              <Alert
-                                type="warning"
-                                showIcon
-                                message={filteredGroupPreviews[field.name]?.issues.join(" | ")}
-                              />
-                            ) : null}
-                            <Space wrap>
-                              {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).map((name) => (
-                                <Tag key={name}>{name}</Tag>
-                              ))}
-                            </Space>
-                            {(filteredGroupPreviews[field.name]?.matched_proxy_names ?? []).length === 0 ? (
-                              <Typography.Text type="secondary">
-                                No matched proxies in current cache.
-                              </Typography.Text>
-                            ) : null}
-                          </Space>
                         </Space>
                       ),
                     },
