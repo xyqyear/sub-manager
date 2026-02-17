@@ -2,14 +2,6 @@
 
 Clash Meta proxy subscription / routing rule management and config generation tool.
 
-## Working with This Document
-
-This file is a reference for the project's architecture, domain model, API surface, and known gaps. When exiting plan mode, update this document to reflect any structural changes introduced by the plan — add new fields, routes, or components; remove deleted ones; adjust descriptions as needed. Do not write changelogs or "updated X" notes; keep the document self-consistent as if it were written from scratch for the current state of the codebase.
-
-## Before Comitting
-
-When the user requests for commit message, ask the user to provide a issue number. The user can answer with a issue number or none. The commit message should include the issue number in the form of "#000" at the end of the title of the commit message.
-
 ## Quick Start
 
 ```bash
