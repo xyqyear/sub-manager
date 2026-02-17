@@ -48,6 +48,8 @@ class GenerationInput(BaseModel):
     dialer_override_rules: list[DialerOverridePayload] = []
     route_template_id: str | None = None
     slot_mappings: list[SlotMappingPayload] = []
+    test_url: str | None = None
+    test_interval_sec: int | None = None
 
     @staticmethod
     def from_main_config(config: MainConfig, *, public_base_url: str) -> GenerationInput:
@@ -62,6 +64,8 @@ class GenerationInput(BaseModel):
             dialer_override_rules=config.dialer_override_rules,
             route_template_id=config.route_template_id,
             slot_mappings=config.slot_mappings,
+            test_url=config.test_url,
+            test_interval_sec=config.test_interval_sec,
         )
 
     @staticmethod
@@ -77,6 +81,8 @@ class GenerationInput(BaseModel):
             dialer_override_rules=draft.dialer_override_rules,
             route_template_id=draft.route_template_id,
             slot_mappings=draft.slot_mappings,
+            test_url=draft.test_url,
+            test_interval_sec=draft.test_interval_sec,
         )
 
 
@@ -329,7 +335,7 @@ def build_filtered_groups(ctx: GenerationContext) -> None:
 
         ctx.filtered_group_members[fg.name] = members
         ctx.filtered_groups.append(
-            _build_group_obj(fg.name, fg.group_mode, members, fg.test_url, fg.test_interval_sec)
+            _build_group_obj(fg.name, fg.group_mode, members, ctx.source.test_url, ctx.source.test_interval_sec)
         )
 
     ctx.group_names_filtered = [fg.name for fg in sorted_fg]
@@ -377,7 +383,7 @@ def build_manual_groups(ctx: GenerationContext) -> None:
     for mg in sorted_mg:
         members = resolve_manual_group(mg.name)
         ctx.manual_groups.append(
-            _build_group_obj(mg.name, mg.group_mode, members, mg.test_url, mg.test_interval_sec)
+            _build_group_obj(mg.name, mg.group_mode, members, ctx.source.test_url, ctx.source.test_interval_sec)
         )
 
     ctx.group_names_manual = [mg.name for mg in sorted_mg]

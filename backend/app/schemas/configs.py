@@ -23,6 +23,8 @@ class MainConfigCreate(BaseModel):
     enabled: bool = True
     final_target_type: FinalTargetType = "DIRECT"
     final_target_group_name: str | None = None
+    test_url: str | None = None
+    test_interval_sec: int | None = None
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []
@@ -36,6 +38,8 @@ class MainConfigUpdate(BaseModel):
     enabled: bool | None = None
     final_target_type: FinalTargetType | None = None
     final_target_group_name: str | None = None
+    test_url: str | None = None
+    test_interval_sec: int | None = None
     filtered_groups: list[FilteredGroupPayload] | None = None
     manual_groups: list[ManualGroupPayload] | None = None
     dialer_override_rules: list[DialerOverridePayload] | None = None
@@ -52,6 +56,8 @@ class MainConfigRead(BaseModel):
     enabled: bool
     final_target_type: str
     final_target_group_name: str | None
+    test_url: str | None
+    test_interval_sec: int | None
     filtered_groups: list[FilteredGroupPayload]
     manual_groups: list[ManualGroupPayload]
     dialer_override_rules: list[DialerOverridePayload]
@@ -72,8 +78,6 @@ class FilteredGroupPayload(BaseModel):
     name: str
     position: int
     group_mode: GroupMode
-    test_url: str | None = None
-    test_interval_sec: int | None = None
     copy_nodes: bool = False
     rules: list[FilteredGroupRulePayload]
 
@@ -88,8 +92,6 @@ class ManualGroupPayload(BaseModel):
     name: str
     position: int
     group_mode: GroupMode
-    test_url: str | None = None
-    test_interval_sec: int | None = None
     members: list[ManualGroupMemberPayload]
 
 
@@ -157,6 +159,8 @@ class DraftPreviewRequest(BaseModel):
     final_target_type: FinalTargetType = "DIRECT"
     final_target_group_name: str | None = None
     config_id: str | None = None
+    test_url: str | None = None
+    test_interval_sec: int | None = None
     filtered_groups: list[FilteredGroupPayload] = []
     manual_groups: list[ManualGroupPayload] = []
     dialer_override_rules: list[DialerOverridePayload] = []

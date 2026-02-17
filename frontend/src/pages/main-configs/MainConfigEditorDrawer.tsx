@@ -58,6 +58,8 @@ type EditorFormValues = {
   enabled: boolean;
   final_target_type: FinalTargetType;
   final_target_group_name?: string;
+  test_url?: string;
+  test_interval_sec?: number;
   route_template_id?: string;
   slot_mappings: SlotMappingFormValue[];
 } & Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules">;
@@ -70,6 +72,8 @@ const defaultValues: EditorFormValues = {
   enabled: true,
   final_target_type: "DIRECT",
   final_target_group_name: "",
+  test_url: "",
+  test_interval_sec: undefined,
   filtered_groups: [],
   manual_groups: [],
   dialer_override_rules: [],
@@ -125,14 +129,12 @@ function MoveControls({ index, total, onMove }: MoveControlsProps) {
   );
 }
 
-function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules"> & { route_template_id: string | null; slot_mappings: { slot_name: string; group_name: string }[] } {
+function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules"> & { test_url: string | null; test_interval_sec: number | null; route_template_id: string | null; slot_mappings: { slot_name: string; group_name: string }[] } {
   return {
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
       position: groupIndex + 1,
       group_mode: group.group_mode,
-      test_url: group.test_url ?? null,
-      test_interval_sec: group.test_interval_sec ?? null,
       copy_nodes: Boolean(group.copy_nodes),
       rules: (group.rules ?? []).map((rule, ruleIndex) => ({
         subscription_source_id: rule.subscription_source_id,
@@ -145,8 +147,6 @@ function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filte
       name: group.name,
       position: groupIndex + 1,
       group_mode: group.group_mode,
-      test_url: group.test_url ?? null,
-      test_interval_sec: group.test_interval_sec ?? null,
       members: (group.members ?? []).map((member, memberIndex) => ({
         member_type: member.member_type,
         member_ref: member.member_ref,
@@ -157,6 +157,8 @@ function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filte
       filtered_group_name: item.filtered_group_name,
       dialer_group_name: item.dialer_group_name,
     })),
+    test_url: values.test_url || null,
+    test_interval_sec: values.test_interval_sec ?? null,
     route_template_id: values.route_template_id || null,
     slot_mappings: (values.slot_mappings ?? []).map((m) => ({
       slot_name: m.slot_name,
@@ -305,6 +307,8 @@ export default function MainConfigEditorDrawer({
         enabled: config.enabled,
         final_target_type: config.final_target_type,
         final_target_group_name: config.final_target_group_name ?? "",
+        test_url: config.test_url ?? "",
+        test_interval_sec: config.test_interval_sec ?? undefined,
         filtered_groups: config.filtered_groups,
         manual_groups: config.manual_groups,
         dialer_override_rules: config.dialer_override_rules,
@@ -460,6 +464,19 @@ export default function MainConfigEditorDrawer({
           <Input.TextArea rows={10} />
         </Form.Item>
 
+        <Row gutter={12}>
+          <Col xs={24} sm={12} md={8}>
+            <Form.Item name="test_url" label="Test URL">
+              <Input placeholder="https://www.gstatic.com/generate_204" />
+            </Form.Item>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Form.Item name="test_interval_sec" label="Test Interval (sec)">
+              <InputNumber min={1} style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+        </Row>
+
         <Divider />
         <Typography.Title level={5}>Filtered Groups</Typography.Title>
         <Form.List name="filtered_groups">
@@ -525,19 +542,11 @@ export default function MainConfigEditorDrawer({
                               </Form.Item>
                             </Col>
                             <Col xs={12} sm={5}>
-                              <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
-                                <InputNumber min={1} style={{ width: "100%" }} />
-                              </Form.Item>
-                            </Col>
-                            <Col xs={12} sm={5}>
                               <Form.Item name={[field.name, "copy_nodes"]} label="Copy Nodes" valuePropName="checked">
                                 <Switch />
                               </Form.Item>
                             </Col>
                           </Row>
-                          <Form.Item name={[field.name, "test_url"]} label="Test URL">
-                            <Input placeholder="https://www.gstatic.com/generate_204" />
-                          </Form.Item>
 
                           <Form.List name={[field.name, "rules"]}>
                             {(ruleFields, ruleOps) => (
@@ -653,8 +662,6 @@ export default function MainConfigEditorDrawer({
                     add({
                       name: "",
                       group_mode: "select",
-                      test_url: "",
-                      test_interval_sec: 300,
                       copy_nodes: false,
                       rules: [],
                     });
@@ -724,15 +731,7 @@ export default function MainConfigEditorDrawer({
                                 <Select options={groupModeOptions} />
                               </Form.Item>
                             </Col>
-                            <Col xs={12} sm={7}>
-                              <Form.Item name={[field.name, "test_interval_sec"]} label="Test Interval">
-                                <InputNumber min={1} style={{ width: "100%" }} />
-                              </Form.Item>
-                            </Col>
                           </Row>
-                          <Form.Item name={[field.name, "test_url"]} label="Test URL">
-                            <Input placeholder="https://www.gstatic.com/generate_204" />
-                          </Form.Item>
 
                           <Form.List name={[field.name, "members"]}>
                             {(memberFields, memberOps) => (
@@ -838,8 +837,6 @@ export default function MainConfigEditorDrawer({
                     add({
                       name: "",
                       group_mode: "select",
-                      test_url: "",
-                      test_interval_sec: 300,
                       members: [],
                     })
                   }

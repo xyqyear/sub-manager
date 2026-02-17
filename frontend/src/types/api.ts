@@ -85,12 +85,12 @@ export interface MainConfig {
   enabled: boolean;
   final_target_type: "DIRECT" | "REJECT" | "group";
   final_target_group_name: string | null;
+  test_url: string | null;
+  test_interval_sec: number | null;
   filtered_groups: {
     name: string;
     position: number;
     group_mode: GroupMode;
-    test_url?: string | null;
-    test_interval_sec?: number | null;
     copy_nodes?: boolean;
     rules: {
       subscription_source_id: string;
@@ -103,8 +103,6 @@ export interface MainConfig {
     name: string;
     position: number;
     group_mode: GroupMode;
-    test_url?: string | null;
-    test_interval_sec?: number | null;
     members: {
       member_type: "filtered_group" | "manual_group";
       member_ref: string;

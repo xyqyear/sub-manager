@@ -75,6 +75,8 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
         enabled=payload.enabled,
         final_target_type=payload.final_target_type,
         final_target_group_name=payload.final_target_group_name,
+        test_url=payload.test_url,
+        test_interval_sec=payload.test_interval_sec,
         filtered_groups=payload.filtered_groups,
         manual_groups=payload.manual_groups,
         dialer_override_rules=payload.dialer_override_rules,
@@ -105,6 +107,12 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
 
     if payload.final_target_group_name is not None:
         config.final_target_group_name = payload.final_target_group_name
+
+    if payload.test_url is not None:
+        config.test_url = payload.test_url
+
+    if payload.test_interval_sec is not None:
+        config.test_interval_sec = payload.test_interval_sec
 
     builder_changed = any(
         getattr(payload, f) is not None

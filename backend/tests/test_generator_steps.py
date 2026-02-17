@@ -796,3 +796,60 @@ class TestIsStale:
     def test_naive_future_does_not_crash(self):
         naive = datetime(2099, 1, 1)
         assert _is_stale(naive) is False
+
+
+# ---------------------------------------------------------------------------
+# Config-level test_url / test_interval_sec propagation
+# ---------------------------------------------------------------------------
+
+class TestConfigLevelTestUrlPropagation:
+    def test_filtered_groups_use_config_level_values(self):
+        pool = _simple_pool([{"name": "hk-1", "type": "ss"}])
+        source = _make_source_input(
+            test_url="http://custom-test/204",
+            test_interval_sec=120,
+            filtered_groups=[
+                FilteredGroupPayload(
+                    name="HK", position=1, group_mode="url-test",
+                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern=".*", regex_flags="", position=1)],
+                ),
+            ],
+        )
+        ctx = _make_ctx(source=source, pool_result=pool)
+        build_filtered_groups(ctx)
+        assert ctx.filtered_groups[0].url == "http://custom-test/204"
+        assert ctx.filtered_groups[0].interval == 120
+
+    def test_manual_groups_use_config_level_values(self):
+        source = _make_source_input(
+            test_url="http://custom-test/204",
+            test_interval_sec=60,
+            manual_groups=[
+                ManualGroupPayload(
+                    name="MG", position=1, group_mode="fallback",
+                    members=[ManualGroupMemberPayload(member_type="filtered_group", member_ref="FG", position=1)],
+                ),
+            ],
+        )
+        ctx = _make_ctx(source=source)
+        ctx.filtered_group_members = {"FG": ["proxy-1"]}
+        ctx.group_names_filtered = ["FG"]
+        build_manual_groups(ctx)
+        assert ctx.manual_groups[0].url == "http://custom-test/204"
+        assert ctx.manual_groups[0].interval == 60
+
+    def test_none_falls_back_to_settings(self):
+        pool = _simple_pool([{"name": "node", "type": "ss"}])
+        source = _make_source_input(
+            filtered_groups=[
+                FilteredGroupPayload(
+                    name="FG", position=1, group_mode="url-test",
+                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern=".*", regex_flags="", position=1)],
+                ),
+            ],
+        )
+        ctx = _make_ctx(source=source, pool_result=pool)
+        build_filtered_groups(ctx)
+        from app.config import settings
+        assert ctx.filtered_groups[0].url == settings.default_test_url
+        assert ctx.filtered_groups[0].interval == settings.default_test_interval

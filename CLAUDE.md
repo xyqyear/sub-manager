@@ -160,6 +160,7 @@ backend/
     versions/
       001_initial.py               # baseline schema
       002_route_templates.py       # route templates + data migration from route_bindings
+      003_hoist_test_url.py        # move test_url/test_interval_sec from groups to main_config
   tests/
     conftest.py                    # test DB isolation (/tmp/sub_manager_test.sqlite3)
     test_admin_auth.py
@@ -223,6 +224,8 @@ Corresponds to Stage 3 (the composition layer). A main config combines subscript
 
 - `base_config_yaml`: base Clash settings (ports, DNS, TUN, etc.)
 - `final_target_type`: DIRECT / REJECT / group (for the trailing MATCH rule)
+- `test_url`: optional test URL for url-test/fallback groups (nullable, applied to all groups during generation)
+- `test_interval_sec`: optional test interval in seconds (nullable, applied to all groups during generation)
 - `route_template_id`: reference to a route template (nullable)
 - `slot_mappings`: PydanticListType mapping each template slot name to an actual proxy group name
 - A **builder graph** stored as 3 JSON columns directly on `main_config`, using a `PydanticListType` TypeDecorator that serializes/deserializes via Pydantic `TypeAdapter`:
@@ -311,10 +314,11 @@ RouteTemplate fields:
 # MainConfigRead — response model, includes all fields below
 MainConfig fields:
   name, base_config_yaml, enabled, final_target_type, final_target_group_name
+  test_url: str | None, test_interval_sec: int | None
   route_template_id: str | None
   slot_mappings: [{slot_name, group_name}]
-  filtered_groups: [{name, position, group_mode, test_url?, test_interval_sec?, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
-  manual_groups: [{name, position, group_mode, test_url?, test_interval_sec?, members: [{member_type, member_ref, position}]}]
+  filtered_groups: [{name, position, group_mode, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
+  manual_groups: [{name, position, group_mode, members: [{member_type, member_ref, position}]}]
   dialer_override_rules: [{filtered_group_name, dialer_group_name}]
 
 # Draft preview (POST /api/admin/main-configs/preview-draft)
@@ -323,6 +327,8 @@ DraftPreviewRequest:
   final_target_type: FinalTargetType
   final_target_group_name: str | None
   config_id: str | None
+  test_url: str | None
+  test_interval_sec: int | None
   route_template_id: str | None
   slot_mappings: list[SlotMappingPayload]
   filtered_groups: list[FilteredGroupPayload]
@@ -337,7 +343,7 @@ PreviewWithDiagnosticsResponse:
 # Generator input (internal, not an API schema)
 GenerationInput:
   config_id, base_config_yaml, final_target_type, final_target_group_name, public_base_url
-  route_template_id, slot_mappings, filtered_groups, manual_groups, dialer_override_rules
+  test_url, test_interval_sec, route_template_id, slot_mappings, filtered_groups, manual_groups, dialer_override_rules
 
 # RouteBindingPayload (internal, produced by resolve_route_bindings at generation time)
   position, binding_name, rule_source_id, default_group_name, no_resolve
@@ -383,4 +389,5 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 ## Known Gaps / Technical Notes
 
 - Alembic manages schema migrations. On first run: `create_all()` + stamp head. On existing DBs without Alembic: stamps baseline + upgrades. On existing DBs with Alembic: runs pending upgrades.
+- Migration testing convention: each new migration should have a corresponding test in `test_migration.py` that creates a temp DB at the prior revision, runs the migration, and verifies the result.
 - Plaintext admin_token by design.

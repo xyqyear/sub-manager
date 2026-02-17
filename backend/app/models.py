@@ -157,6 +157,9 @@ class MainConfig(Base, TimestampMixin):
     )  # DIRECT|REJECT|group
     final_target_group_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    test_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    test_interval_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     filtered_groups: Mapped[list[FilteredGroupPayload]] = mapped_column(
         PydanticListType(FilteredGroupPayload), default=list, nullable=False
     )
