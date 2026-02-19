@@ -58,11 +58,13 @@ export default function SortableFormList({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-        {fields.map((field, index) => (
-          <SortableItem key={field.key} id={`${idPrefix}-${field.key}`}>
-            {(dragHandle) => children(field, index, dragHandle)}
-          </SortableItem>
-        ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {fields.map((field, index) => (
+            <SortableItem key={field.key} id={`${idPrefix}-${field.key}`}>
+              {(dragHandle) => children(field, index, dragHandle)}
+            </SortableItem>
+          ))}
+        </div>
       </SortableContext>
     </DndContext>
   );
