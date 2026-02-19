@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_token
 from app.db.database import get_db
+from app.schemas.reorder import ReorderRequest
 from app.schemas.route_templates import (
     RouteTemplateCreate,
     RouteTemplateRead,
@@ -16,6 +17,7 @@ from app.services.route_templates import (
     delete_route_template,
     get_route_template_or_404,
     list_route_templates,
+    reorder_route_templates,
     update_route_template,
 )
 
@@ -30,6 +32,15 @@ router = APIRouter(
 async def get_route_templates(db: AsyncSession = Depends(get_db)) -> list[RouteTemplateRead]:
     rows = await list_route_templates(db)
     return [RouteTemplateRead.model_validate(row) for row in rows]
+
+
+@router.put("/reorder")
+async def reorder_route_templates_endpoint(
+    payload: ReorderRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    await reorder_route_templates(db, payload)
+    return {"status": "ok"}
 
 
 @router.post("", response_model=RouteTemplateRead)

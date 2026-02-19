@@ -15,6 +15,7 @@ from app.schemas.configs import (
     MainConfigUpdate,
     PreviewWithDiagnosticsResponse,
 )
+from app.schemas.reorder import ReorderRequest
 from app.services.common import GenerationError, ServiceError, get_public_base_url, to_http_error
 from app.services.generator import GenerationInput, generate_config_yaml
 from app.services.main_configs import (
@@ -24,6 +25,7 @@ from app.services.main_configs import (
     get_main_config_or_404,
     list_main_configs,
     preview_filtered_group_matches,
+    reorder_main_configs,
     update_main_config,
     validate_base_yaml,
     validate_builder_refs,
@@ -41,6 +43,15 @@ router = APIRouter(
 async def get_main_configs(db: AsyncSession = Depends(get_db)) -> list[MainConfigRead]:
     rows = await list_main_configs(db)
     return [MainConfigRead.model_validate(row) for row in rows]
+
+
+@router.put("/reorder")
+async def reorder_main_configs_endpoint(
+    payload: ReorderRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    await reorder_main_configs(db, payload)
+    return {"status": "ok"}
 
 
 @router.post("", response_model=MainConfigRead)

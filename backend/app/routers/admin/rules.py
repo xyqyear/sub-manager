@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_token
 from app.db.database import get_db
+from app.schemas.reorder import ReorderRequest
 from app.schemas.rules import RuleCreate, RuleListItem, RuleRead, RuleRefreshResponse, RuleUpdate
 from app.services.common import ServiceError, to_http_error
 from app.services.refresh_loop import refresh_loop_manager
@@ -14,6 +15,7 @@ from app.services.rules import (
     get_rule_or_404,
     list_rules_summary,
     refresh_remote_rule,
+    reorder_rules,
     update_rule,
 )
 
@@ -27,6 +29,15 @@ router = APIRouter(
 async def get_rules(db: AsyncSession = Depends(get_db)) -> list[RuleListItem]:
     rows = await list_rules_summary(db)
     return [RuleListItem.model_validate(row) for row in rows]
+
+
+@router.put("/reorder")
+async def reorder_rules_endpoint(
+    payload: ReorderRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    await reorder_rules(db, payload)
+    return {"status": "ok"}
 
 
 @router.get("/{rule_id}", response_model=RuleRead)

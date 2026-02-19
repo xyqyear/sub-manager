@@ -56,6 +56,7 @@ class RuleRead(BaseModel):
 
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    position: int
 
 
 class RuleListItem(BaseModel):
@@ -79,6 +80,7 @@ class RuleListItem(BaseModel):
 
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    position: int
 
 
 class RuleRefreshResponse(BaseModel):

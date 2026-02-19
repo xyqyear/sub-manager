@@ -147,6 +147,7 @@ backend/
       rules.py
       configs.py                   # MainConfigCreate/Update/Read, DraftPreviewRequest, etc.
       route_templates.py           # RouteTemplateCreate/Update/Read, slot/binding payloads
+      reorder.py                   # ReorderRequest/ReorderItem for bulk position updates
     services/                      # business logic
       common.py                    # ServiceError, GenerationError, jitter, slugify, parsing
       subscriptions.py             # subscription CRUD + remote fetch + cache
@@ -161,6 +162,7 @@ backend/
       001_initial.py               # baseline schema
       002_route_templates.py       # route templates + data migration from route_bindings
       003_hoist_test_url.py        # move test_url/test_interval_sec from groups to main_config
+      004_add_position_columns.py   # add position column to 4 top-level tables
   tests/
     conftest.py                    # test DB isolation (/tmp/sub_manager_test.sqlite3)
     test_admin_auth.py
@@ -176,6 +178,15 @@ frontend/
     App.tsx                        # shell, guarded routing, navigation
     utils/api.ts                   # axios instance + bearer interceptor + token storage
     types/api.ts                   # TS interfaces matching backend schemas
+    hooks/
+      useIsMobile.ts               # responsive breakpoint hook
+    components/
+      CardGrid.tsx                 # reusable card grid with optional drag-and-drop reorder
+      dnd/                         # @dnd-kit drag-and-drop primitives
+        DragHandle.tsx             # grab-handle icon with forwarded ref
+        SortableItem.tsx           # useSortable wrapper, render-prop for drag handle
+        SortableWrapper.tsx        # DndContext + SortableContext + sensors
+        SortableFormList.tsx       # adapter for Ant Design Form.List + dnd-kit
     pages/
       Login.tsx
       Subscriptions.tsx            # subscription CRUD UI
@@ -236,7 +247,7 @@ Corresponds to Stage 3 (the composition layer). A main config combines subscript
 | `manual_groups`         | `list[ManualGroupPayload]`    | Named groups referencing filtered/manual groups (each contains nested members) |
 | `dialer_override_rules` | `list[DialerOverridePayload]` | Assigns `dialer-proxy` to proxies in a filtered group                          |
 
-All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps. Lists are ordered by `position` field within the JSON arrays.
+All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` timestamps and a `position` column for user-controlled ordering. Lists within JSON arrays are ordered by `position` field.
 
 ## Config Generation Engine (`services/generator.py`)
 
@@ -275,16 +286,19 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 | POST   | `/api/admin/subscriptions/{id}/refresh`           | Sync refresh                        |
 | POST   | `/api/admin/subscriptions/{id}/refresh-async`     | Async refresh                       |
 | DELETE | `/api/admin/subscriptions/{id}`                   | Delete subscription                 |
+| PUT    | `/api/admin/subscriptions/reorder`                | Bulk reorder subscriptions          |
 | GET    | `/api/admin/rules`                                | List rules                          |
 | POST   | `/api/admin/rules`                                | Create rule                         |
 | PUT    | `/api/admin/rules/{id}`                           | Update rule                         |
 | POST   | `/api/admin/rules/{id}/refresh`                   | Sync refresh                        |
 | POST   | `/api/admin/rules/{id}/refresh-async`             | Async refresh                       |
 | DELETE | `/api/admin/rules/{id}`                           | Delete rule                         |
+| PUT    | `/api/admin/rules/reorder`                        | Bulk reorder rules                  |
 | GET    | `/api/admin/route-templates`                      | List route templates                |
 | POST   | `/api/admin/route-templates`                      | Create route template               |
 | PUT    | `/api/admin/route-templates/{id}`                 | Update route template               |
 | DELETE | `/api/admin/route-templates/{id}`                 | Delete route template (protected)   |
+| PUT    | `/api/admin/route-templates/reorder`              | Bulk reorder route templates        |
 | GET    | `/api/admin/main-configs`                         | List configs                        |
 | POST   | `/api/admin/main-configs`                         | Create config                       |
 | PUT    | `/api/admin/main-configs/{id}`                    | Update config                       |
@@ -292,6 +306,7 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 | POST   | `/api/admin/main-configs/{id}/preview`            | Preview generated YAML              |
 | POST   | `/api/admin/main-configs/filtered-groups/preview` | Preview filtered group matches      |
 | POST   | `/api/admin/main-configs/preview-draft`           | Preview uncommitted builder changes |
+| PUT    | `/api/admin/main-configs/reorder`                 | Bulk reorder main configs           |
 
 ### Public
 
@@ -383,6 +398,7 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 - Auth: token in `localStorage` key `sub_manager_admin_token`. Axios interceptor adds bearer header.
 - Routes: `/login`, `/subscriptions`, `/rules`, `/routes`, `/configs` (guarded).
 - Builder editor: `MainConfigEditorDrawer.tsx` - visual form with collapsible sections for filtered groups, manual groups, dialer overrides, and route template selection with slot mappings.
+- Drag-and-drop: `@dnd-kit/core` + `@dnd-kit/sortable` for reordering. Top-level card grids use `rectSortingStrategy`; form lists use `verticalListSortingStrategy` with isolated `DndContext` per nested list.
 - Frontend dev proxy: Vite proxies `/api` to `http://localhost:5678`.
 - Path alias: `@` -> `frontend/src/`.
 

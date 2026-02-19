@@ -111,6 +111,8 @@ class SubscriptionSource(Base, TimestampMixin):
     cached_raw_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
     cached_proxies_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
 
 class RuleSource(Base, TimestampMixin):
     __tablename__ = "rule_source"
@@ -136,6 +138,8 @@ class RuleSource(Base, TimestampMixin):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     cached_payload_lines_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class MainConfig(Base, TimestampMixin):
@@ -174,6 +178,8 @@ class MainConfig(Base, TimestampMixin):
         PydanticListType(SlotMappingPayload), default=list, nullable=False
     )
 
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
 
 class RouteTemplate(Base, TimestampMixin):
     __tablename__ = "route_template"
@@ -190,3 +196,5 @@ class RouteTemplate(Base, TimestampMixin):
     bindings: Mapped[list[RouteTemplateBindingPayload]] = mapped_column(
         PydanticListType(RouteTemplateBindingPayload), default=list, nullable=False
     )
+
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

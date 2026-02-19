@@ -10,6 +10,7 @@ import yaml
 
 from app.config import settings
 from app.models import RuleSource
+from app.schemas.reorder import ReorderRequest
 from app.schemas.rules import RuleBehavior, RuleCreate, RuleUpdate
 from app.services.common import ServiceError, next_refresh_time, utc_now
 
@@ -70,6 +71,7 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
     await _assert_unique_name(db, payload.name)
 
     interval = _normalize_interval(payload.update_interval_sec)
+    max_pos = (await db.execute(select(func.coalesce(func.max(RuleSource.position), -1)))).scalar()
     source = RuleSource(
         name=payload.name,
         mode=payload.mode,
@@ -78,6 +80,7 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
         remote_url=payload.remote_url,
         auto_update=payload.auto_update,
         update_interval_sec=interval,
+        position=max_pos + 1,
     )
 
     if payload.mode == "remote":
@@ -209,7 +212,7 @@ async def get_rule_or_404(db: AsyncSession, rule_id: str) -> RuleSource:
 
 
 async def list_rules(db: AsyncSession) -> list[RuleSource]:
-    result = await db.execute(select(RuleSource).order_by(RuleSource.created_at.desc()))
+    result = await db.execute(select(RuleSource).order_by(RuleSource.position.asc(), RuleSource.created_at.desc()))
     return list(result.scalars().all())
 
 
@@ -221,9 +224,9 @@ async def list_rules_summary(db: AsyncSession) -> list[dict[str, Any]]:
         R.next_refresh_at, R.last_refresh_at,
         R.last_status, R.last_error,
         func.json_array_length(R.cached_payload_lines_json).label("cached_payload_lines_count"),
-        R.created_at, R.updated_at,
+        R.created_at, R.updated_at, R.position,
     ]
-    result = await db.execute(select(*cols).order_by(R.created_at.desc()))
+    result = await db.execute(select(*cols).order_by(R.position.asc(), R.created_at.desc()))
     return [row._asdict() for row in result.all()]
 
 
@@ -244,3 +247,13 @@ async def get_due_rule_ids(db: AsyncSession) -> list[str]:
         )
     )
     return [item for item in result.scalars().all()]
+
+
+async def reorder_rules(db: AsyncSession, payload: ReorderRequest) -> None:
+    for item in payload.items:
+        await db.execute(
+            RuleSource.__table__.update()
+            .where(RuleSource.__table__.c.id == item.id)
+            .values(position=item.position)
+        )
+    await db.commit()

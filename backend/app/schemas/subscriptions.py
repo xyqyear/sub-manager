@@ -58,6 +58,7 @@ class SubscriptionRead(BaseModel):
     cached_proxies_json: list[dict[str, Any]] | None
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    position: int
 
 
 class SubscriptionListItem(BaseModel):
@@ -84,6 +85,7 @@ class SubscriptionListItem(BaseModel):
     cached_proxies_count: int | None
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    position: int
 
 
 class SubscriptionRefreshResponse(BaseModel):

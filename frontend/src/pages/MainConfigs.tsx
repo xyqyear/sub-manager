@@ -12,6 +12,7 @@ import {
 } from "antd";
 import { BlockOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import MainConfigEditorDrawer from "@/pages/main-configs/MainConfigEditorDrawer";
 import type {
   MainConfig,
@@ -118,13 +119,27 @@ export default function MainConfigsPage() {
     }
   };
 
-  const renderCard = (item: MainConfig) => (
+  const handleReorder = async (oldIndex: number, newIndex: number) => {
+    const reordered = arrayMove(items, oldIndex, newIndex);
+    setItems(reordered);
+    try {
+      await api.put("/admin/main-configs/reorder", {
+        items: reordered.map((item, i) => ({ id: item.id, position: i })),
+      });
+    } catch (error) {
+      void message.error(errorDetail(error));
+      await fetchAll();
+    }
+  };
+
+  const renderCard = (item: MainConfig, dragHandle: React.ReactNode) => (
     <Card
       size="small"
 
       title={item.name}
       extra={
         <Space>
+          {dragHandle}
           <Tooltip title="Edit">
             <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
           </Tooltip>
@@ -167,7 +182,7 @@ export default function MainConfigsPage() {
         </Tooltip>
       </Space>
 
-      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} onReorder={handleReorder} />
 
       <MainConfigEditorDrawer
         open={editorOpen}

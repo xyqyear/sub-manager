@@ -20,8 +20,8 @@ import {
   Typography,
   message,
 } from "antd";
-import { CloseOutlined, DeleteOutlined, DownOutlined, EyeOutlined, PlusOutlined, SaveOutlined, UpOutlined } from "@ant-design/icons";
-import { type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CloseOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   FilteredGroupPreviewResponse,
   GroupMode,
@@ -33,6 +33,7 @@ import type {
 } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import useIsMobile from "@/hooks/useIsMobile";
+import SortableFormList from "@/components/dnd/SortableFormList";
 
 type FinalTargetType = "DIRECT" | "REJECT" | "group";
 type ManualMemberType = "filtered_group" | "manual_group";
@@ -86,48 +87,6 @@ const groupModeOptions: { label: string; value: GroupMode }[] = [
   { label: "fallback", value: "fallback" },
   { label: "url-test", value: "url-test" },
 ];
-
-type MoveControlsProps = {
-  index: number;
-  total: number;
-  onMove: (from: number, to: number) => void;
-};
-
-function MoveControls({ index, total, onMove }: MoveControlsProps) {
-  const handleMove =
-    (offset: -1 | 1) =>
-    (event: MouseEvent<HTMLElement>) => {
-      event.stopPropagation();
-      const nextIndex = index + offset;
-      if (nextIndex < 0 || nextIndex >= total) {
-        return;
-      }
-      onMove(index, nextIndex);
-    };
-
-  return (
-    <Space.Compact>
-      <Tooltip title="Move Up">
-        <Button
-          type="text"
-          size="small"
-          icon={<UpOutlined />}
-          disabled={index === 0}
-          onClick={handleMove(-1)}
-        />
-      </Tooltip>
-      <Tooltip title="Move Down">
-        <Button
-          type="text"
-          size="small"
-          icon={<DownOutlined />}
-          disabled={index >= total - 1}
-          onClick={handleMove(1)}
-        />
-      </Tooltip>
-    </Space.Compact>
-  );
-}
 
 function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules"> & { test_url: string | null; test_interval_sec: number | null; route_template_id: string | null; slot_mappings: { slot_name: string; group_name: string }[] } {
   return {
@@ -482,179 +441,166 @@ export default function MainConfigEditorDrawer({
         <Form.List name="filtered_groups">
           {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field, groupIndex) => (
-                <Collapse
-                  key={field.key}
-                  defaultActiveKey={["content"]}
-                  items={[
-                    {
-                      key: "content",
-                      label:
-                        filteredGroupsWatch?.[field.name]?.name?.trim() ||
-                        `Filtered Group #${groupIndex + 1}`,
-                      extra: (
-                        <Space size={4}>
-                          <MoveControls
-                            index={groupIndex}
-                            total={fields.length}
-                            onMove={(from, to) => {
-                              move(from, to);
-                              queueFilteredGroupPreview();
-                            }}
-                          />
-                          <Popconfirm
-                            title="Remove this filtered group?"
-                            onConfirm={() => {
-                              remove(field.name);
-                              queueFilteredGroupPreview();
-                            }}
-                          >
-                            <Tooltip title="Remove">
-                              <Button
-                                danger
-                                size="small"
-                                icon={<DeleteOutlined />}
-                                onClick={(event) => event.stopPropagation()}
-                              />
-                            </Tooltip>
-                          </Popconfirm>
-                        </Space>
-                      ),
-                      children: (
-                        <Space direction="vertical" style={{ display: "flex" }}>
-                          <Row gutter={12}>
-                            <Col xs={24} sm={8}>
-                              <Form.Item
-                                name={[field.name, "name"]}
-                                label="Group Name"
-                                rules={[{ required: true }]}
-                              >
-                                <Input onBlur={() => void triggerFilteredGroupPreview()} />
-                              </Form.Item>
-                            </Col>
-                            <Col xs={12} sm={6}>
-                              <Form.Item
-                                name={[field.name, "group_mode"]}
-                                label="Mode"
-                                rules={[{ required: true }]}
-                              >
-                                <Select options={groupModeOptions} />
-                              </Form.Item>
-                            </Col>
-                            <Col xs={12} sm={5}>
-                              <Form.Item name={[field.name, "copy_nodes"]} label="Copy Nodes" valuePropName="checked">
-                                <Switch />
-                              </Form.Item>
-                            </Col>
-                          </Row>
+              <SortableFormList fields={fields} move={move} onAfterMove={() => queueFilteredGroupPreview()} idPrefix="fg">
+                {(field, groupIndex, dragHandle) => (
+                  <Collapse
+                    defaultActiveKey={["content"]}
+                    items={[
+                      {
+                        key: "content",
+                        label:
+                          filteredGroupsWatch?.[field.name]?.name?.trim() ||
+                          `Filtered Group #${groupIndex + 1}`,
+                        extra: (
+                          <Space size={4}>
+                            {dragHandle}
+                            <Popconfirm
+                              title="Remove this filtered group?"
+                              onConfirm={() => {
+                                remove(field.name);
+                                queueFilteredGroupPreview();
+                              }}
+                            >
+                              <Tooltip title="Remove">
+                                <Button
+                                  danger
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  onClick={(event) => event.stopPropagation()}
+                                />
+                              </Tooltip>
+                            </Popconfirm>
+                          </Space>
+                        ),
+                        children: (
+                          <Space direction="vertical" style={{ display: "flex" }}>
+                            <Row gutter={12}>
+                              <Col xs={24} sm={8}>
+                                <Form.Item
+                                  name={[field.name, "name"]}
+                                  label="Group Name"
+                                  rules={[{ required: true }]}
+                                >
+                                  <Input onBlur={() => void triggerFilteredGroupPreview()} />
+                                </Form.Item>
+                              </Col>
+                              <Col xs={12} sm={6}>
+                                <Form.Item
+                                  name={[field.name, "group_mode"]}
+                                  label="Mode"
+                                  rules={[{ required: true }]}
+                                >
+                                  <Select options={groupModeOptions} />
+                                </Form.Item>
+                              </Col>
+                              <Col xs={12} sm={5}>
+                                <Form.Item name={[field.name, "copy_nodes"]} label="Copy Nodes" valuePropName="checked">
+                                  <Switch />
+                                </Form.Item>
+                              </Col>
+                            </Row>
 
-                          <Form.List name={[field.name, "rules"]}>
-                            {(ruleFields, ruleOps) => (
-                              <Space direction="vertical" style={{ display: "flex" }}>
-                                <Typography.Text strong>Rules</Typography.Text>
-                                {ruleFields.map((ruleField, ruleIndex) => (
-                                  <Card key={ruleField.key} size="small">
-                                    <Row gutter={12}>
-                                      <Col xs={24} sm={8}>
-                                        <Form.Item
-                                          name={[ruleField.name, "subscription_source_id"]}
-                                          label="Subscription"
-                                          rules={[{ required: true }]}
-                                        >
-                                          <Select
-                                            options={subscriptions.map((item) => ({
-                                              label: item.name,
-                                              value: item.id,
-                                            }))}
-                                            onBlur={() => void triggerFilteredGroupPreview()}
-                                          />
-                                        </Form.Item>
-                                      </Col>
-                                      <Col xs={16} sm={8}>
-                                        <Form.Item
-                                          name={[ruleField.name, "regex_pattern"]}
-                                          label="Regex"
-                                          rules={[{ required: true }]}
-                                        >
-                                          <Input onBlur={() => void triggerFilteredGroupPreview()} />
-                                        </Form.Item>
-                                      </Col>
-                                      <Col xs={8} sm={4}>
-                                        <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags">
-                                          <Input
-                                            placeholder="i"
-                                            onBlur={() => void triggerFilteredGroupPreview()}
-                                          />
-                                        </Form.Item>
-                                      </Col>
-                                      <Col xs={24} sm={4}>
-                                        <Form.Item label=" ">
-                                          <Space size={4}>
-                                            <MoveControls
-                                              index={ruleIndex}
-                                              total={ruleFields.length}
-                                              onMove={(from, to) => {
-                                                ruleOps.move(from, to);
-                                                queueFilteredGroupPreview();
-                                              }}
-                                            />
-                                            <Tooltip title="Delete">
-                                              <Button
-                                                danger
-                                                icon={<DeleteOutlined />}
-                                                onClick={() => {
-                                                  ruleOps.remove(ruleField.name);
-                                                  queueFilteredGroupPreview();
-                                                }}
+                            <Form.List name={[field.name, "rules"]}>
+                              {(ruleFields, ruleOps) => (
+                                <Space direction="vertical" style={{ display: "flex" }}>
+                                  <Typography.Text strong>Rules</Typography.Text>
+                                  <SortableFormList fields={ruleFields} move={ruleOps.move} onAfterMove={() => queueFilteredGroupPreview()} idPrefix={`fg-${field.key}-rule`}>
+                                    {(ruleField, _ruleIndex, ruleDragHandle) => (
+                                      <Card size="small">
+                                        <Row gutter={12}>
+                                          <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{ruleDragHandle}</Col>
+                                          <Col xs={23} sm={8}>
+                                            <Form.Item
+                                              name={[ruleField.name, "subscription_source_id"]}
+                                              label="Subscription"
+                                              rules={[{ required: true }]}
+                                            >
+                                              <Select
+                                                options={subscriptions.map((item) => ({
+                                                  label: item.name,
+                                                  value: item.id,
+                                                }))}
+                                                onBlur={() => void triggerFilteredGroupPreview()}
                                               />
-                                            </Tooltip>
-                                          </Space>
-                                        </Form.Item>
-                                      </Col>
-                                    </Row>
-                                    {(() => {
-                                      const ruleResult = filteredGroupPreviews[field.name]?.rule_results?.[ruleField.name];
-                                      if (!ruleResult) return null;
-                                      return (
-                                        <div style={{ marginTop: 8 }}>
-                                          {ruleResult.issue ? (
-                                            <Alert type="warning" showIcon message={ruleResult.issue} style={{ marginBottom: 4 }} />
-                                          ) : ruleResult.matched_proxy_names.length > 0 ? (
-                                            <Space wrap>
-                                              {ruleResult.matched_proxy_names.map((name) => (
-                                                <Tag key={name}>{name}</Tag>
-                                              ))}
-                                            </Space>
-                                          ) : (
-                                            <Typography.Text type="secondary">No matched proxies</Typography.Text>
-                                          )}
-                                        </div>
-                                      );
-                                    })()}
-                                  </Card>
-                                ))}
-                                <Tooltip title="Add Filter Rule">
-                                  <Button
-                                    icon={<PlusOutlined />}
-                                    onClick={() => {
-                                      ruleOps.add({
-                                        subscription_source_id: "",
-                                        regex_pattern: ".*",
-                                        regex_flags: "",
-                                      });
-                                      queueFilteredGroupPreview();
-                                    }}
-                                  />
-                                </Tooltip>
-                              </Space>
-                            )}
-                          </Form.List>
-                        </Space>
-                      ),
-                    },
-                  ]}
-                />
-              ))}
+                                            </Form.Item>
+                                          </Col>
+                                          <Col xs={16} sm={7}>
+                                            <Form.Item
+                                              name={[ruleField.name, "regex_pattern"]}
+                                              label="Regex"
+                                              rules={[{ required: true }]}
+                                            >
+                                              <Input onBlur={() => void triggerFilteredGroupPreview()} />
+                                            </Form.Item>
+                                          </Col>
+                                          <Col xs={8} sm={4}>
+                                            <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags">
+                                              <Input
+                                                placeholder="i"
+                                                onBlur={() => void triggerFilteredGroupPreview()}
+                                              />
+                                            </Form.Item>
+                                          </Col>
+                                          <Col xs={24} sm={3}>
+                                            <Form.Item label=" ">
+                                              <Tooltip title="Delete">
+                                                <Button
+                                                  danger
+                                                  icon={<DeleteOutlined />}
+                                                  onClick={() => {
+                                                    ruleOps.remove(ruleField.name);
+                                                    queueFilteredGroupPreview();
+                                                  }}
+                                                />
+                                              </Tooltip>
+                                            </Form.Item>
+                                          </Col>
+                                        </Row>
+                                        {(() => {
+                                          const ruleResult = filteredGroupPreviews[field.name]?.rule_results?.[ruleField.name];
+                                          if (!ruleResult) return null;
+                                          return (
+                                            <div style={{ marginTop: 8 }}>
+                                              {ruleResult.issue ? (
+                                                <Alert type="warning" showIcon message={ruleResult.issue} style={{ marginBottom: 4 }} />
+                                              ) : ruleResult.matched_proxy_names.length > 0 ? (
+                                                <Space wrap>
+                                                  {ruleResult.matched_proxy_names.map((name) => (
+                                                    <Tag key={name}>{name}</Tag>
+                                                  ))}
+                                                </Space>
+                                              ) : (
+                                                <Typography.Text type="secondary">No matched proxies</Typography.Text>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
+                                      </Card>
+                                    )}
+                                  </SortableFormList>
+                                  <Tooltip title="Add Filter Rule">
+                                    <Button
+                                      icon={<PlusOutlined />}
+                                      onClick={() => {
+                                        ruleOps.add({
+                                          subscription_source_id: "",
+                                          regex_pattern: ".*",
+                                          regex_flags: "",
+                                        });
+                                        queueFilteredGroupPreview();
+                                      }}
+                                    />
+                                  </Tooltip>
+                                </Space>
+                              )}
+                            </Form.List>
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
+                )}
+              </SortableFormList>
               <Tooltip title="Add Filtered Group">
                 <Button
                   icon={<PlusOutlined />}
@@ -678,158 +624,151 @@ export default function MainConfigEditorDrawer({
         <Form.List name="manual_groups">
           {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field, groupIndex) => (
-                <Collapse
-                  key={field.key}
-                  defaultActiveKey={["content"]}
-                  items={[
-                    {
-                      key: "content",
-                      label:
-                        manualGroupsWatch?.[field.name]?.name?.trim() ||
-                        `Manual Group #${groupIndex + 1}`,
-                      extra: (
-                        <Space size={4}>
-                          <MoveControls
-                            index={groupIndex}
-                            total={fields.length}
-                            onMove={move}
-                          />
-                          <Popconfirm
-                            title="Remove this manual group?"
-                            onConfirm={() => remove(field.name)}
-                          >
-                            <Tooltip title="Remove">
-                              <Button
-                                danger
-                                size="small"
-                                icon={<DeleteOutlined />}
-                                onClick={(event) => event.stopPropagation()}
-                              />
-                            </Tooltip>
-                          </Popconfirm>
-                        </Space>
-                      ),
-                      children: (
-                        <Space direction="vertical" style={{ display: "flex" }}>
-                          <Row gutter={12}>
-                            <Col xs={24} sm={10}>
-                              <Form.Item
-                                name={[field.name, "name"]}
-                                label="Group Name"
-                                rules={[{ required: true }]}
-                              >
-                                <Input />
-                              </Form.Item>
-                            </Col>
-                            <Col xs={12} sm={7}>
-                              <Form.Item
-                                name={[field.name, "group_mode"]}
-                                label="Mode"
-                                rules={[{ required: true }]}
-                              >
-                                <Select options={groupModeOptions} />
-                              </Form.Item>
-                            </Col>
-                          </Row>
+              <SortableFormList fields={fields} move={move} idPrefix="mg">
+                {(field, groupIndex, dragHandle) => (
+                  <Collapse
+                    defaultActiveKey={["content"]}
+                    items={[
+                      {
+                        key: "content",
+                        label:
+                          manualGroupsWatch?.[field.name]?.name?.trim() ||
+                          `Manual Group #${groupIndex + 1}`,
+                        extra: (
+                          <Space size={4}>
+                            {dragHandle}
+                            <Popconfirm
+                              title="Remove this manual group?"
+                              onConfirm={() => remove(field.name)}
+                            >
+                              <Tooltip title="Remove">
+                                <Button
+                                  danger
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  onClick={(event) => event.stopPropagation()}
+                                />
+                              </Tooltip>
+                            </Popconfirm>
+                          </Space>
+                        ),
+                        children: (
+                          <Space direction="vertical" style={{ display: "flex" }}>
+                            <Row gutter={12}>
+                              <Col xs={24} sm={10}>
+                                <Form.Item
+                                  name={[field.name, "name"]}
+                                  label="Group Name"
+                                  rules={[{ required: true }]}
+                                >
+                                  <Input />
+                                </Form.Item>
+                              </Col>
+                              <Col xs={12} sm={7}>
+                                <Form.Item
+                                  name={[field.name, "group_mode"]}
+                                  label="Mode"
+                                  rules={[{ required: true }]}
+                                >
+                                  <Select options={groupModeOptions} />
+                                </Form.Item>
+                              </Col>
+                            </Row>
 
-                          <Form.List name={[field.name, "members"]}>
-                            {(memberFields, memberOps) => (
-                              <Space direction="vertical" style={{ display: "flex" }}>
-                                <Typography.Text strong>Members</Typography.Text>
-                                {memberFields.map((memberField, memberIndex) => (
-                                  <Card key={memberField.key} size="small">
-                                    <Row gutter={12}>
-                                      <Col xs={24} sm={6}>
-                                        <Form.Item
-                                          name={[memberField.name, "member_type"]}
-                                          label="Type"
-                                          rules={[{ required: true }]}
-                                        >
-                                          <Select
-                                            options={[
-                                              { label: "filtered_group", value: "filtered_group" },
-                                              { label: "manual_group", value: "manual_group" },
-                                            ]}
-                                          />
-                                        </Form.Item>
-                                      </Col>
-                                      <Col xs={24} sm={12}>
-                                        <Form.Item noStyle shouldUpdate>
-                                          {() => {
-                                            const memberType = form.getFieldValue([
-                                              "manual_groups",
-                                              field.name,
-                                              "members",
-                                              memberField.name,
-                                              "member_type",
-                                            ]) as ManualMemberType | undefined;
+                            <Form.List name={[field.name, "members"]}>
+                              {(memberFields, memberOps) => (
+                                <Space direction="vertical" style={{ display: "flex" }}>
+                                  <Typography.Text strong>Members</Typography.Text>
+                                  <SortableFormList fields={memberFields} move={memberOps.move} idPrefix={`mg-${field.key}-member`}>
+                                    {(memberField, _memberIndex, memberDragHandle) => (
+                                      <Card size="small">
+                                        <Row gutter={12}>
+                                          <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{memberDragHandle}</Col>
+                                          <Col xs={23} sm={6}>
+                                            <Form.Item
+                                              name={[memberField.name, "member_type"]}
+                                              label="Type"
+                                              rules={[{ required: true }]}
+                                            >
+                                              <Select
+                                                options={[
+                                                  { label: "filtered_group", value: "filtered_group" },
+                                                  { label: "manual_group", value: "manual_group" },
+                                                ]}
+                                              />
+                                            </Form.Item>
+                                          </Col>
+                                          <Col xs={24} sm={11}>
+                                            <Form.Item noStyle shouldUpdate>
+                                              {() => {
+                                                const memberType = form.getFieldValue([
+                                                  "manual_groups",
+                                                  field.name,
+                                                  "members",
+                                                  memberField.name,
+                                                  "member_type",
+                                                ]) as ManualMemberType | undefined;
 
-                                            if (memberType === "filtered_group") {
-                                              return (
-                                                <Form.Item
-                                                  name={[memberField.name, "member_ref"]}
-                                                  label="Member"
-                                                  rules={[{ required: true }]}
-                                                >
-                                                  <Select options={filteredGroupOptions} showSearch />
-                                                </Form.Item>
-                                              );
-                                            }
+                                                if (memberType === "filtered_group") {
+                                                  return (
+                                                    <Form.Item
+                                                      name={[memberField.name, "member_ref"]}
+                                                      label="Member"
+                                                      rules={[{ required: true }]}
+                                                    >
+                                                      <Select options={filteredGroupOptions} showSearch />
+                                                    </Form.Item>
+                                                  );
+                                                }
 
-                                            if (memberType === "manual_group") {
-                                              return (
-                                                <Form.Item
-                                                  name={[memberField.name, "member_ref"]}
-                                                  label="Member"
-                                                  rules={[{ required: true }]}
-                                                >
-                                                  <Select options={manualGroupOptions} showSearch />
-                                                </Form.Item>
-                                              );
-                                            }
+                                                if (memberType === "manual_group") {
+                                                  return (
+                                                    <Form.Item
+                                                      name={[memberField.name, "member_ref"]}
+                                                      label="Member"
+                                                      rules={[{ required: true }]}
+                                                    >
+                                                      <Select options={manualGroupOptions} showSearch />
+                                                    </Form.Item>
+                                                  );
+                                                }
 
-                                            return null;
-                                          }}
-                                        </Form.Item>
-                                      </Col>
-                                      <Col xs={24} sm={6}>
-                                        <Form.Item label=" ">
-                                          <Space size={4}>
-                                            <MoveControls
-                                              index={memberIndex}
-                                              total={memberFields.length}
-                                              onMove={memberOps.move}
-                                            />
-                                            <Tooltip title="Delete">
-                                              <Button danger icon={<DeleteOutlined />} onClick={() => memberOps.remove(memberField.name)} />
-                                            </Tooltip>
-                                          </Space>
-                                        </Form.Item>
-                                      </Col>
-                                    </Row>
-                                  </Card>
-                                ))}
-                                <Tooltip title="Add Manual Member">
-                                  <Button
-                                    icon={<PlusOutlined />}
-                                    onClick={() =>
-                                      memberOps.add({
-                                        member_type: "filtered_group",
-                                        member_ref: "",
-                                      })
-                                    }
-                                  />
-                                </Tooltip>
-                              </Space>
-                            )}
-                          </Form.List>
-                        </Space>
-                      ),
-                    },
-                  ]}
-                />
-              ))}
+                                                return null;
+                                              }}
+                                            </Form.Item>
+                                          </Col>
+                                          <Col xs={24} sm={3}>
+                                            <Form.Item label=" ">
+                                              <Tooltip title="Delete">
+                                                <Button danger icon={<DeleteOutlined />} onClick={() => memberOps.remove(memberField.name)} />
+                                              </Tooltip>
+                                            </Form.Item>
+                                          </Col>
+                                        </Row>
+                                      </Card>
+                                    )}
+                                  </SortableFormList>
+                                  <Tooltip title="Add Manual Member">
+                                    <Button
+                                      icon={<PlusOutlined />}
+                                      onClick={() =>
+                                        memberOps.add({
+                                          member_type: "filtered_group",
+                                          member_ref: "",
+                                        })
+                                      }
+                                    />
+                                  </Tooltip>
+                                </Space>
+                              )}
+                            </Form.List>
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
+                )}
+              </SortableFormList>
               <Tooltip title="Add Manual Group">
                 <Button
                   icon={<PlusOutlined />}
@@ -851,40 +790,40 @@ export default function MainConfigEditorDrawer({
         <Form.List name="dialer_override_rules">
           {(fields, { add, remove, move }) => (
             <Space direction="vertical" style={{ display: "flex" }}>
-              {fields.map((field, index) => (
-                <Card key={field.key} size="small">
-                  <Row gutter={12}>
-                    <Col xs={24} sm={10}>
-                      <Form.Item
-                        name={[field.name, "filtered_group_name"]}
-                        label="Filtered Group"
-                        rules={[{ required: true }]}
-                      >
-                        <Select options={filteredGroupOptions} showSearch />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={8}>
-                      <Form.Item
-                        name={[field.name, "dialer_group_name"]}
-                        label="Dialer Group"
-                        rules={[{ required: true }]}
-                      >
-                        <Select options={nonRouteGroupOptions} showSearch />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={4}>
-                      <Form.Item label=" ">
-                        <Space size={4}>
-                          <MoveControls index={index} total={fields.length} onMove={move} />
+              <SortableFormList fields={fields} move={move} idPrefix="dor">
+                {(field, _index, dragHandle) => (
+                  <Card size="small">
+                    <Row gutter={12}>
+                      <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{dragHandle}</Col>
+                      <Col xs={23} sm={10}>
+                        <Form.Item
+                          name={[field.name, "filtered_group_name"]}
+                          label="Filtered Group"
+                          rules={[{ required: true }]}
+                        >
+                          <Select options={filteredGroupOptions} showSearch />
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Form.Item
+                          name={[field.name, "dialer_group_name"]}
+                          label="Dialer Group"
+                          rules={[{ required: true }]}
+                        >
+                          <Select options={nonRouteGroupOptions} showSearch />
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={3}>
+                        <Form.Item label=" ">
                           <Tooltip title="Delete">
                             <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                           </Tooltip>
-                        </Space>
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Card>
-              ))}
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </Card>
+                )}
+              </SortableFormList>
               <Tooltip title="Add Dialer Override">
                 <Button
                   icon={<PlusOutlined />}

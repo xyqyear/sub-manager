@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import SubscriptionSource
+from app.schemas.reorder import ReorderRequest
 from app.schemas.subscriptions import SubscriptionCreate, SubscriptionUpdate
 from app.services.common import (
     ServiceError,
@@ -79,6 +80,8 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
     update_interval_sec = _normalize_interval(payload.update_interval_sec)
     now = utc_now()
 
+    max_pos = (await db.execute(select(func.coalesce(func.max(SubscriptionSource.position), -1)))).scalar()
+
     source = SubscriptionSource(
         name=payload.name,
         mode=mode,
@@ -88,6 +91,7 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
         auto_update=payload.auto_update,
         update_interval_sec=update_interval_sec,
         last_status="never",
+        position=max_pos + 1,
     )
 
     if mode == "remote":
@@ -236,7 +240,9 @@ async def get_subscription_or_404(db: AsyncSession, subscription_id: str) -> Sub
 
 
 async def list_subscriptions(db: AsyncSession) -> list[SubscriptionSource]:
-    result = await db.execute(select(SubscriptionSource).order_by(SubscriptionSource.created_at.desc()))
+    result = await db.execute(
+        select(SubscriptionSource).order_by(SubscriptionSource.position.asc(), SubscriptionSource.created_at.desc())
+    )
     return list(result.scalars().all())
 
 
@@ -250,9 +256,9 @@ async def list_subscriptions_summary(db: AsyncSession) -> list[dict[str, Any]]:
         S.last_status, S.last_error,
         S.subscription_userinfo_raw, S.subscription_userinfo_json,
         func.json_array_length(S.cached_proxies_json).label("cached_proxies_count"),
-        S.created_at, S.updated_at,
+        S.created_at, S.updated_at, S.position,
     ]
-    result = await db.execute(select(*cols).order_by(S.created_at.desc()))
+    result = await db.execute(select(*cols).order_by(S.position.asc(), S.created_at.desc()))
     return [row._asdict() for row in result.all()]
 
 
@@ -273,3 +279,13 @@ async def get_due_subscription_ids(db: AsyncSession) -> list[str]:
         )
     )
     return [item for item in result.scalars().all()]
+
+
+async def reorder_subscriptions(db: AsyncSession, payload: ReorderRequest) -> None:
+    for item in payload.items:
+        await db.execute(
+            SubscriptionSource.__table__.update()
+            .where(SubscriptionSource.__table__.c.id == item.id)
+            .values(position=item.position)
+        )
+    await db.commit()

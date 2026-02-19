@@ -17,6 +17,7 @@ import {
 } from "antd";
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import yaml from "js-yaml";
 import type { SubscriptionSource, SubscriptionSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
@@ -193,7 +194,20 @@ export default function SubscriptionsPage() {
     }
   };
 
-  const renderCard = (item: SubscriptionSourceListItem) => {
+  const handleReorder = async (oldIndex: number, newIndex: number) => {
+    const reordered = arrayMove(items, oldIndex, newIndex);
+    setItems(reordered);
+    try {
+      await api.put("/admin/subscriptions/reorder", {
+        items: reordered.map((item, i) => ({ id: item.id, position: i })),
+      });
+    } catch (error) {
+      void message.error(errorDetail(error));
+      await fetchItems();
+    }
+  };
+
+  const renderCard = (item: SubscriptionSourceListItem, dragHandle: React.ReactNode) => {
     const info = item.subscription_userinfo_json;
     const hasTraffic = info && info.total;
 
@@ -204,6 +218,7 @@ export default function SubscriptionsPage() {
         title={item.name}
         extra={
           <Space>
+            {dragHandle}
             <Tooltip title="Edit">
               <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
             </Tooltip>
@@ -294,7 +309,7 @@ export default function SubscriptionsPage() {
         </Tooltip>
       </Space>
 
-      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} onReorder={handleReorder} />
 
       <Modal
         title={editing ? "Edit Subscription" : "Create Subscription"}

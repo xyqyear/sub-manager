@@ -65,6 +65,7 @@ class MainConfigRead(BaseModel):
     slot_mappings: list[SlotMappingPayload]
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    position: int
 
 
 class FilteredGroupRulePayload(BaseModel):

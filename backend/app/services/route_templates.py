@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import MainConfig, RouteTemplate, RuleSource
+from app.schemas.reorder import ReorderRequest
 from app.schemas.route_templates import (
     RouteTemplateBindingPayload,
     RouteTemplateCreate,
@@ -66,10 +67,13 @@ async def create_route_template(db: AsyncSession, payload: RouteTemplateCreate) 
         validate_template_shapes(payload.slots, payload.bindings)
         await validate_template_refs(db, payload.bindings)
 
+    max_pos = (await db.execute(select(func.coalesce(func.max(RouteTemplate.position), -1)))).scalar()
+
     template = RouteTemplate(
         name=payload.name,
         slots=payload.slots,
         bindings=payload.bindings,
+        position=max_pos + 1,
     )
     db.add(template)
     await db.commit()
@@ -100,7 +104,7 @@ async def update_route_template(
 
 
 async def list_route_templates(db: AsyncSession) -> list[RouteTemplate]:
-    result = await db.execute(select(RouteTemplate).order_by(RouteTemplate.created_at.desc()))
+    result = await db.execute(select(RouteTemplate).order_by(RouteTemplate.position.asc(), RouteTemplate.created_at.desc()))
     return list(result.scalars().all())
 
 
@@ -118,4 +122,14 @@ async def delete_route_template(db: AsyncSession, template: RouteTemplate) -> No
     if result.scalars().first():
         raise ServiceError("route template is referenced by a main config", 409)
     await db.delete(template)
+    await db.commit()
+
+
+async def reorder_route_templates(db: AsyncSession, payload: ReorderRequest) -> None:
+    for item in payload.items:
+        await db.execute(
+            RouteTemplate.__table__.update()
+            .where(RouteTemplate.__table__.c.id == item.id)
+            .values(position=item.position)
+        )
     await db.commit()

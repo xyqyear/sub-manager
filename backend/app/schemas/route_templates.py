@@ -39,3 +39,4 @@ class RouteTemplateRead(BaseModel):
     bindings: list[RouteTemplateBindingPayload]
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    position: int

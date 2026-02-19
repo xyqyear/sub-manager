@@ -18,6 +18,7 @@ export interface SubscriptionSource {
   subscription_userinfo_raw: string | null;
   subscription_userinfo_json: Record<string, number> | null;
   cached_proxies_json: Record<string, unknown>[] | null;
+  position: number;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +39,7 @@ export interface SubscriptionSourceListItem {
   subscription_userinfo_raw: string | null;
   subscription_userinfo_json: Record<string, number> | null;
   cached_proxies_count: number | null;
+  position: number;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +58,7 @@ export interface RuleSource {
   last_status: string;
   last_error: string | null;
   cached_payload_lines_json: string[] | null;
+  position: number;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +77,7 @@ export interface RuleSourceListItem {
   last_status: string;
   last_error: string | null;
   cached_payload_lines_count: number | null;
+  position: number;
   created_at: string;
   updated_at: string;
 }
@@ -115,6 +119,7 @@ export interface MainConfig {
   }[];
   route_template_id: string | null;
   slot_mappings: SlotMapping[];
+  position: number;
   created_at: string;
   updated_at: string;
 }
@@ -142,6 +147,7 @@ export interface RouteTemplate {
   name: string;
   slots: RouteTemplateSlot[];
   bindings: RouteTemplateBinding[];
+  position: number;
   created_at: string;
   updated_at: string;
 }

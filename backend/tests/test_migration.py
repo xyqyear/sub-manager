@@ -321,3 +321,145 @@ def test_migration_003_hoists_test_url(tmp_path):
         assert "test_interval_sec" not in group
 
     conn.close()
+
+
+def _create_post_003_schema(db_path: Path) -> None:
+    conn = sqlite3.connect(str(db_path))
+    c = conn.cursor()
+
+    c.execute("""
+        CREATE TABLE subscription_source (
+            id VARCHAR(36) PRIMARY KEY,
+            name VARCHAR(128) UNIQUE NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            mode VARCHAR(16) NOT NULL,
+            remote_url TEXT,
+            remote_auth_header TEXT,
+            auto_update BOOLEAN NOT NULL DEFAULT 0,
+            update_interval_sec INTEGER NOT NULL DEFAULT 3600,
+            next_refresh_at DATETIME,
+            last_refresh_at DATETIME,
+            last_status VARCHAR(16) NOT NULL DEFAULT 'never',
+            last_error TEXT,
+            subscription_userinfo_raw TEXT,
+            subscription_userinfo_json JSON,
+            cached_raw_yaml TEXT,
+            cached_proxies_json JSON,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE rule_source (
+            id VARCHAR(36) PRIMARY KEY,
+            name VARCHAR(128) UNIQUE NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            mode VARCHAR(16) NOT NULL,
+            behavior VARCHAR(16) NOT NULL,
+            remote_url TEXT,
+            auto_update BOOLEAN NOT NULL DEFAULT 0,
+            update_interval_sec INTEGER NOT NULL DEFAULT 3600,
+            next_refresh_at DATETIME,
+            last_refresh_at DATETIME,
+            last_status VARCHAR(16) NOT NULL DEFAULT 'never',
+            last_error TEXT,
+            cached_payload_lines_json JSON,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE route_template (
+            id VARCHAR(36) PRIMARY KEY,
+            name VARCHAR(128) UNIQUE NOT NULL,
+            slots TEXT NOT NULL DEFAULT '[]',
+            bindings TEXT NOT NULL DEFAULT '[]',
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE main_config (
+            id VARCHAR(36) PRIMARY KEY,
+            name VARCHAR(128) UNIQUE NOT NULL,
+            base_config_yaml TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            final_target_type VARCHAR(16) NOT NULL DEFAULT 'DIRECT',
+            final_target_group_name VARCHAR(128),
+            test_url TEXT,
+            test_interval_sec INTEGER,
+            filtered_groups TEXT NOT NULL DEFAULT '[]',
+            manual_groups TEXT NOT NULL DEFAULT '[]',
+            dialer_override_rules TEXT NOT NULL DEFAULT '[]',
+            route_template_id VARCHAR(36),
+            slot_mappings TEXT NOT NULL DEFAULT '[]',
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    """)
+
+    c.execute(
+        "INSERT INTO subscription_source (id, name, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ("sub-1", "Sub A", "manual", "2025-01-03T00:00:00", "2025-01-03T00:00:00"),
+    )
+    c.execute(
+        "INSERT INTO subscription_source (id, name, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ("sub-2", "Sub B", "manual", "2025-01-01T00:00:00", "2025-01-01T00:00:00"),
+    )
+    c.execute(
+        "INSERT INTO subscription_source (id, name, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ("sub-3", "Sub C", "manual", "2025-01-02T00:00:00", "2025-01-02T00:00:00"),
+    )
+
+    c.execute(
+        "INSERT INTO rule_source (id, name, mode, behavior, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        ("rule-1", "Rule 1", "manual", "domain", "2025-01-01T00:00:00", "2025-01-01T00:00:00"),
+    )
+
+    c.execute(
+        "INSERT INTO route_template (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        ("rt-1", "Template 1", "2025-01-01T00:00:00", "2025-01-01T00:00:00"),
+    )
+
+    c.execute(
+        "INSERT INTO main_config (id, name, base_config_yaml, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ("cfg-1", "Config 1", "mode: rule", "2025-01-01T00:00:00", "2025-01-01T00:00:00"),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def test_migration_004_adds_position_columns(tmp_path):
+    db_path = tmp_path / "test_migration_004.sqlite3"
+    _create_post_003_schema(db_path)
+
+    cfg = _get_alembic_config(db_path)
+    command.stamp(cfg, "003")
+    command.upgrade(cfg, "head")
+
+    conn = sqlite3.connect(str(db_path))
+    c = conn.cursor()
+
+    for table in ["subscription_source", "rule_source", "route_template", "main_config"]:
+        columns = [row[1] for row in c.execute(f"PRAGMA table_info({table})").fetchall()]
+        assert "position" in columns, f"{table} missing position column"
+
+    subs = c.execute("SELECT id, position FROM subscription_source ORDER BY position").fetchall()
+    assert subs[0] == ("sub-1", 0)
+    assert subs[1] == ("sub-3", 1)
+    assert subs[2] == ("sub-2", 2)
+
+    rules = c.execute("SELECT id, position FROM rule_source").fetchall()
+    assert rules[0] == ("rule-1", 0)
+
+    templates = c.execute("SELECT id, position FROM route_template").fetchall()
+    assert templates[0] == ("rt-1", 0)
+
+    configs = c.execute("SELECT id, position FROM main_config").fetchall()
+    assert configs[0] == ("cfg-1", 0)
+
+    conn.close()

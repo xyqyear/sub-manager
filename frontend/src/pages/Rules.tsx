@@ -16,6 +16,7 @@ import {
 } from "antd";
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, GithubOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import yaml from "js-yaml";
 import type { RuleSource, RuleSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
@@ -254,13 +255,27 @@ export default function RulesPage() {
     }
   };
 
-  const renderCard = (item: RuleSourceListItem) => (
+  const handleReorder = async (oldIndex: number, newIndex: number) => {
+    const reordered = arrayMove(items, oldIndex, newIndex);
+    setItems(reordered);
+    try {
+      await api.put("/admin/rules/reorder", {
+        items: reordered.map((item, i) => ({ id: item.id, position: i })),
+      });
+    } catch (error) {
+      void message.error(errorDetail(error));
+      await fetchItems();
+    }
+  };
+
+  const renderCard = (item: RuleSourceListItem, dragHandle: React.ReactNode) => (
     <Card
       size="small"
 
       title={item.name}
       extra={
         <Space>
+          {dragHandle}
           <Tooltip title="Edit">
             <Button size="small" icon={<EditOutlined />} onClick={() => void openEdit(item)} />
           </Tooltip>
@@ -328,7 +343,7 @@ export default function RulesPage() {
         </Tooltip>
       </Space>
 
-      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} onReorder={handleReorder} />
 
       <Modal
         title={editing ? "Edit Rule" : "Create Rule"}

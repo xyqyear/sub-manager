@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
@@ -24,6 +24,7 @@ from app.schemas.configs import (
     DialerOverridePayload,
     SlotMappingPayload,
 )
+from app.schemas.reorder import ReorderRequest
 from app.services.common import ServiceError
 from app.services.generator import (
     OrderedSource,
@@ -69,6 +70,8 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
     group_name_set = _collect_group_names(payload.filtered_groups, payload.manual_groups)
     await validate_slot_mappings(db, payload.route_template_id, payload.slot_mappings, group_name_set)
 
+    max_pos = (await db.execute(select(func.coalesce(func.max(MainConfig.position), -1)))).scalar()
+
     config = MainConfig(
         name=payload.name,
         base_config_yaml=payload.base_config_yaml,
@@ -82,6 +85,7 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
         dialer_override_rules=payload.dialer_override_rules,
         route_template_id=payload.route_template_id,
         slot_mappings=payload.slot_mappings,
+        position=max_pos + 1,
     )
 
     db.add(config)
@@ -146,7 +150,7 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
 
 
 async def list_main_configs(db: AsyncSession) -> list[MainConfig]:
-    result = await db.execute(select(MainConfig).order_by(MainConfig.created_at.desc()))
+    result = await db.execute(select(MainConfig).order_by(MainConfig.position.asc(), MainConfig.created_at.desc()))
     return list(result.scalars().all())
 
 
@@ -388,3 +392,13 @@ async def preview_filtered_group_matches(
         )
 
     return FilteredGroupPreviewResponse(groups=preview_items)
+
+
+async def reorder_main_configs(db: AsyncSession, payload: ReorderRequest) -> None:
+    for item in payload.items:
+        await db.execute(
+            MainConfig.__table__.update()
+            .where(MainConfig.__table__.c.id == item.id)
+            .values(position=item.position)
+        )
+    await db.commit()

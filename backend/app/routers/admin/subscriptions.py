@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_token
 from app.db.database import get_db
+from app.schemas.reorder import ReorderRequest
 from app.schemas.subscriptions import (
     SubscriptionCreate,
     SubscriptionListItem,
@@ -20,6 +21,7 @@ from app.services.subscriptions import (
     get_subscription_or_404,
     list_subscriptions_summary,
     refresh_remote_subscription,
+    reorder_subscriptions,
     update_subscription,
 )
 
@@ -33,6 +35,15 @@ router = APIRouter(
 async def get_subscriptions(db: AsyncSession = Depends(get_db)) -> list[SubscriptionListItem]:
     rows = await list_subscriptions_summary(db)
     return [SubscriptionListItem.model_validate(row) for row in rows]
+
+
+@router.put("/reorder")
+async def reorder_subscriptions_endpoint(
+    payload: ReorderRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    await reorder_subscriptions(db, payload)
+    return {"status": "ok"}
 
 
 @router.get("/{subscription_id}", response_model=SubscriptionRead)

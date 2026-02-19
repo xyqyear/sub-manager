@@ -14,12 +14,14 @@ import {
   Typography,
   message,
 } from "antd";
-import { DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined, ReloadOutlined, UpOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import type { RouteTemplate, RuleSourceListItem } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
 import useIsMobile from "@/hooks/useIsMobile";
 import CardGrid from "@/components/CardGrid";
+import SortableFormList from "@/components/dnd/SortableFormList";
 
 type SlotFormValue = { name: string };
 type BindingFormValue = {
@@ -39,19 +41,6 @@ const defaultFormValues: TemplateFormValues = {
   slots: [],
   bindings: [],
 };
-
-function MoveControls({ index, total, onMove }: { index: number; total: number; onMove: (from: number, to: number) => void }) {
-  return (
-    <Space.Compact>
-      <Tooltip title="Move Up">
-        <Button type="text" size="small" icon={<UpOutlined />} disabled={index === 0} onClick={() => onMove(index, index - 1)} />
-      </Tooltip>
-      <Tooltip title="Move Down">
-        <Button type="text" size="small" icon={<DownOutlined />} disabled={index >= total - 1} onClick={() => onMove(index, index + 1)} />
-      </Tooltip>
-    </Space.Compact>
-  );
-}
 
 export default function RouteTemplatesPage() {
   const isMobile = useIsMobile();
@@ -156,13 +145,27 @@ export default function RouteTemplatesPage() {
     }
   };
 
-  const renderCard = (item: RouteTemplate) => (
+  const handleReorder = async (oldIndex: number, newIndex: number) => {
+    const reordered = arrayMove(items, oldIndex, newIndex);
+    setItems(reordered);
+    try {
+      await api.put("/admin/route-templates/reorder", {
+        items: reordered.map((item, i) => ({ id: item.id, position: i })),
+      });
+    } catch (error) {
+      void message.error(errorDetail(error));
+      await fetchAll();
+    }
+  };
+
+  const renderCard = (item: RouteTemplate, dragHandle: React.ReactNode) => (
     <Card
       size="small"
 
       title={item.name}
       extra={
         <Space>
+          {dragHandle}
           <Tooltip title="Edit">
             <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
           </Tooltip>
@@ -191,7 +194,7 @@ export default function RouteTemplatesPage() {
         </Tooltip>
       </Space>
 
-      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} />
+      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} onReorder={handleReorder} />
 
       <Modal
         title={editing ? "Edit Route Template" : "Create Route Template"}
@@ -210,25 +213,25 @@ export default function RouteTemplatesPage() {
             {(fields, { add, remove, move }) => (
               <Space direction="vertical" style={{ display: "flex" }}>
                 <strong>Slots</strong>
-                {fields.map((field, index) => (
-                  <Card key={field.key} size="small">
-                    <Row gutter={12} align="middle">
-                      <Col flex="auto">
-                        <Form.Item name={[field.name, "name"]} label="Slot Name" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-                          <Input />
-                        </Form.Item>
-                      </Col>
-                      <Col>
-                        <Space size={4}>
-                          <MoveControls index={index} total={fields.length} onMove={move} />
+                <SortableFormList fields={fields} move={move} idPrefix="slot">
+                  {(field, _index, dragHandle) => (
+                    <Card size="small">
+                      <Row gutter={12} align="middle">
+                        <Col>{dragHandle}</Col>
+                        <Col flex="auto">
+                          <Form.Item name={[field.name, "name"]} label="Slot Name" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
+                            <Input />
+                          </Form.Item>
+                        </Col>
+                        <Col>
                           <Tooltip title="Delete">
                             <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                           </Tooltip>
-                        </Space>
-                      </Col>
-                    </Row>
-                  </Card>
-                ))}
+                        </Col>
+                      </Row>
+                    </Card>
+                  )}
+                </SortableFormList>
                 <Tooltip title="Add Slot">
                   <Button icon={<PlusOutlined />} onClick={() => add({ name: "" })} />
                 </Tooltip>
@@ -242,53 +245,53 @@ export default function RouteTemplatesPage() {
             {(fields, { add, remove, move }) => (
               <Space direction="vertical" style={{ display: "flex" }}>
                 <strong>Bindings</strong>
-                {fields.map((field, index) => (
-                  <Card key={field.key} size="small">
-                    <Row gutter={12}>
-                      <Col xs={24} sm={6}>
-                        <Form.Item name={[field.name, "rule_source_id"]} label="Rule Source" rules={[{ required: true }]}>
-                          <Select
-                            options={rules.map((r) => ({ label: `${r.name} (${r.behavior})`, value: r.id }))}
-                            showSearch
-                          />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={6}>
-                        <Form.Item noStyle shouldUpdate>
-                          {() => {
-                            const ruleSourceId = form.getFieldValue(["bindings", field.name, "rule_source_id"]) as string | undefined;
-                            const ruleName = rules.find((r) => r.id === ruleSourceId)?.name;
-                            return (
-                              <Form.Item name={[field.name, "binding_name"]} label="Binding Name">
-                                <Input placeholder={ruleName || "Same as rule source"} />
-                              </Form.Item>
-                            );
-                          }}
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={5}>
-                        <Form.Item name={[field.name, "default_target"]} label="Default Target" rules={[{ required: true }]}>
-                          <Select options={slotTargetOptions} showSearch />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={12} sm={3}>
-                        <Form.Item name={[field.name, "no_resolve"]} label="No Resolve" valuePropName="checked">
-                          <Switch />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={12} sm={4}>
-                        <Form.Item label=" ">
-                          <Space size={4}>
-                            <MoveControls index={index} total={fields.length} onMove={move} />
+                <SortableFormList fields={fields} move={move} idPrefix="binding">
+                  {(field, _index, dragHandle) => (
+                    <Card size="small">
+                      <Row gutter={12}>
+                        <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{dragHandle}</Col>
+                        <Col xs={23} sm={6}>
+                          <Form.Item name={[field.name, "rule_source_id"]} label="Rule Source" rules={[{ required: true }]}>
+                            <Select
+                              options={rules.map((r) => ({ label: `${r.name} (${r.behavior})`, value: r.id }))}
+                              showSearch
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={6}>
+                          <Form.Item noStyle shouldUpdate>
+                            {() => {
+                              const ruleSourceId = form.getFieldValue(["bindings", field.name, "rule_source_id"]) as string | undefined;
+                              const ruleName = rules.find((r) => r.id === ruleSourceId)?.name;
+                              return (
+                                <Form.Item name={[field.name, "binding_name"]} label="Binding Name">
+                                  <Input placeholder={ruleName || "Same as rule source"} />
+                                </Form.Item>
+                              );
+                            }}
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={5}>
+                          <Form.Item name={[field.name, "default_target"]} label="Default Target" rules={[{ required: true }]}>
+                            <Select options={slotTargetOptions} showSearch />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={12} sm={3}>
+                          <Form.Item name={[field.name, "no_resolve"]} label="No Resolve" valuePropName="checked">
+                            <Switch />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={12} sm={3}>
+                          <Form.Item label=" ">
                             <Tooltip title="Delete">
                               <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                             </Tooltip>
-                          </Space>
-                        </Form.Item>
-                      </Col>
-                    </Row>
-                  </Card>
-                ))}
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </Card>
+                  )}
+                </SortableFormList>
                 <Tooltip title="Add Binding">
                   <Button icon={<PlusOutlined />} onClick={() => add({ binding_name: "", rule_source_id: "", default_target: "", no_resolve: false })} />
                 </Tooltip>
