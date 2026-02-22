@@ -4,7 +4,6 @@ import re
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-import yaml
 
 from app.models import (
     MainConfig,
@@ -30,6 +29,7 @@ from app.services.generator import (
     OrderedSource,
     build_proxy_pool_with_collision_names,
 )
+from app.yaml import YAMLError, yaml_load
 
 
 async def _assert_unique_config_name(db: AsyncSession, name: str, exclude_id: str | None = None) -> None:
@@ -44,8 +44,8 @@ async def _assert_unique_config_name(db: AsyncSession, name: str, exclude_id: st
 
 def validate_base_yaml(base_config_yaml: str) -> None:
     try:
-        parsed = yaml.safe_load(base_config_yaml)
-    except yaml.YAMLError as exc:
+        parsed = yaml_load(base_config_yaml)
+    except YAMLError as exc:
         raise ServiceError(f"base_config_yaml parse failed: {exc}", 422) from exc
 
     if parsed is None:

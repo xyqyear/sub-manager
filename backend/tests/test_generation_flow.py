@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.yaml import yaml_load
+
 
 @pytest.mark.asyncio
 async def test_filtered_group_preview_endpoint_uses_backend_logic(client, admin_headers):
@@ -297,9 +299,7 @@ async def test_copy_nodes_isolates_dialer_override(client, admin_headers):
     )
     assert artifact.status_code == 200, artifact.text
 
-    import yaml
-
-    parsed = yaml.safe_load(artifact.text)
+    parsed = yaml_load(artifact.text)
     proxy_names = [p["name"] for p in parsed["proxies"]]
     assert "shared-node" in proxy_names
     assert "shared-node [Relay]" in proxy_names

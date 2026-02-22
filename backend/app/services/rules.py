@@ -6,13 +6,13 @@ from typing import Any
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-import yaml
 
 from app.config import settings
 from app.models import RuleSource
 from app.schemas.reorder import ReorderRequest
 from app.schemas.rules import RuleBehavior, RuleCreate, RuleUpdate
 from app.services.common import ServiceError, next_refresh_time, utc_now
+from app.yaml import YAMLError, yaml_load
 
 
 def _normalize_interval(interval_sec: int) -> int:
@@ -36,8 +36,8 @@ def validate_rule_payload_lines(behavior: RuleBehavior, lines: list[str]) -> lis
 
 def _parse_rule_payload_from_yaml(content: str, behavior: str) -> list[str]:
     try:
-        parsed = yaml.safe_load(content)
-    except yaml.YAMLError as exc:
+        parsed = yaml_load(content)
+    except YAMLError as exc:
         raise ServiceError(f"rule YAML parse failed: {exc}", 422) from exc
 
     if not isinstance(parsed, dict):

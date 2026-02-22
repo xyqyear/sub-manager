@@ -6,9 +6,10 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-import yaml
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_dummy.db")
+
+from app.yaml import yaml_load
 
 from app.schemas.configs import (
     DialerOverridePayload,
@@ -675,7 +676,7 @@ class TestMergeIntoBaseYaml:
             {"rp": {"type": "http", "behavior": "domain"}},
             ["MATCH,DIRECT"],
         )
-        parsed = yaml.safe_load(result)
+        parsed = yaml_load(result)
         assert "proxies" in parsed
         assert "proxy-groups" in parsed
         assert "rule-providers" in parsed
@@ -684,7 +685,7 @@ class TestMergeIntoBaseYaml:
 
     def test_empty_base(self):
         result = merge_into_base_yaml("", [], [], {}, ["MATCH,DIRECT"])
-        parsed = yaml.safe_load(result)
+        parsed = yaml_load(result)
         assert parsed["proxies"] == []
         assert parsed["rules"] == ["MATCH,DIRECT"]
 
@@ -732,7 +733,7 @@ class TestGenerateFromLoadedData:
         diag = _make_diag()
         result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule}, resolved_bindings)
         assert isinstance(result, GenerationResult)
-        parsed = yaml.safe_load(result.yaml)
+        parsed = yaml_load(result.yaml)
         assert "proxies" in parsed
         assert "proxy-groups" in parsed
         assert any("MATCH,Final" in r for r in parsed["rules"])
@@ -767,7 +768,7 @@ class TestGenerateFromLoadedData:
         )
         diag = _make_diag()
         result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule}, resolved_bindings)
-        parsed = yaml.safe_load(result.yaml)
+        parsed = yaml_load(result.yaml)
         proxy_map = {p["name"]: p for p in parsed["proxies"]}
         assert "shared" in proxy_map
         assert "shared [Relay]" in proxy_map

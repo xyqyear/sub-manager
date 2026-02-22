@@ -20,7 +20,7 @@ dependencies = [
     "pydantic>=2.12.3,<3",
     "pydantic-settings>=2.11.0,<3",
     "python-multipart==0.0.21",
-    "pyyaml>=6.0.3,<7",
+    "ruamel.yaml>=0.18,<1",
     "sqlalchemy>=2.0.44,<3",
     "uvicorn[standard]~=0.40.0",
     "watchfiles>=1.1.1,<2",

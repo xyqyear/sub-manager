@@ -8,7 +8,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import yaml
 
 from app.config import settings
 from app.models import (
@@ -27,6 +26,7 @@ from app.schemas.configs import (
 )
 from app.services.common import GenerationError, dedupe_keep_order, slugify_name, utc_now
 from app.services.refresh_loop import refresh_loop_manager
+from app.yaml import YAMLError, yaml_dump, yaml_load
 
 
 class GenerationDiagnosticsData(BaseModel):
@@ -538,8 +538,8 @@ def merge_into_base_yaml(
     rules: list[str],
 ) -> str:
     try:
-        base = yaml.safe_load(base_config_yaml)
-    except yaml.YAMLError as exc:
+        base = yaml_load(base_config_yaml)
+    except YAMLError as exc:
         raise GenerationError(f"base config yaml parse failed: {exc}", 422) from exc
 
     if base is None:
@@ -552,7 +552,7 @@ def merge_into_base_yaml(
     base["rule-providers"] = rule_providers
     base["rules"] = rules
 
-    return yaml.safe_dump(base, allow_unicode=True, sort_keys=False)
+    return yaml_dump(base)
 
 
 # ---------------------------------------------------------------------------
@@ -689,4 +689,4 @@ async def render_rule_source_yaml(rule_source: RuleSource) -> str:
         raise GenerationError(f"rule source has no cached payload: {rule_source.name}", 409)
 
     content = {"payload": rule_source.cached_payload_lines_json}
-    return yaml.safe_dump(content, allow_unicode=True, sort_keys=False)
+    return yaml_dump(content)

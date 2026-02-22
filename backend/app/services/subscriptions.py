@@ -4,7 +4,6 @@ import copy
 from typing import Any
 
 import httpx
-import yaml
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +17,7 @@ from app.services.common import (
     parse_subscription_userinfo,
     utc_now,
 )
+from app.yaml import YAMLError, yaml_dump, yaml_load
 
 
 def _normalize_interval(interval_sec: int) -> int:
@@ -29,8 +29,8 @@ def _validate_manual_proxy_text(proxy_yaml_object_text: str | None) -> list[dict
         raise ServiceError("manual mode requires proxy_yaml_object_text", 422)
 
     try:
-        parsed = yaml.safe_load(proxy_yaml_object_text)
-    except yaml.YAMLError as exc:
+        parsed = yaml_load(proxy_yaml_object_text)
+    except YAMLError as exc:
         raise ServiceError(f"invalid proxy yaml: {exc}", 422) from exc
 
     if not isinstance(parsed, list):
@@ -45,8 +45,8 @@ def _validate_manual_proxy_text(proxy_yaml_object_text: str | None) -> list[dict
 
 def _parse_remote_subscription_payload(content: str) -> list[dict[str, Any]]:
     try:
-        parsed = yaml.safe_load(content)
-    except yaml.YAMLError as exc:
+        parsed = yaml_load(content)
+    except YAMLError as exc:
         raise ServiceError(f"subscription YAML parse failed: {exc}", 422) from exc
 
     if not isinstance(parsed, dict):
@@ -101,11 +101,7 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
     else:
         proxy_list = _validate_manual_proxy_text(payload.proxy_yaml_object_text)
         source.cached_proxies_json = proxy_list
-        source.cached_raw_yaml = yaml.safe_dump(
-            {"proxies": proxy_list},
-            allow_unicode=True,
-            sort_keys=False,
-        )
+        source.cached_raw_yaml = yaml_dump({"proxies": proxy_list})
         source.last_refresh_at = now
         source.last_status = "ok"
         source.next_refresh_at = None
@@ -145,11 +141,7 @@ async def update_subscription(
         if payload.proxy_yaml_object_text is not None:
             proxy_list = _validate_manual_proxy_text(payload.proxy_yaml_object_text)
             source.cached_proxies_json = proxy_list
-            source.cached_raw_yaml = yaml.safe_dump(
-                {"proxies": proxy_list},
-                allow_unicode=True,
-                sort_keys=False,
-            )
+            source.cached_raw_yaml = yaml_dump({"proxies": proxy_list})
             source.last_status = "ok"
             source.last_error = None
             source.last_refresh_at = utc_now()

@@ -132,6 +132,7 @@ backend/
     main.py                        # FastAPI app factory, lifespan, router mounting
     config.py                      # pydantic-settings (env-driven)
     auth.py                        # bearer token dependency
+    yaml.py                        # ruamel.yaml wrapper (yaml_load, yaml_dump, YAMLError)
     models.py                      # SQLAlchemy ORM models
     db/database.py                 # async engine/session, init_db() with Alembic
     routers/admin/                 # admin CRUD APIs (bearer protected)
