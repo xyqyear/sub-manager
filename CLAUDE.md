@@ -257,18 +257,18 @@ The generation pipeline uses a single `GenerationInput` model and `generate_conf
 1. **Resolve route bindings** - `resolve_route_bindings()` fetches the route template (if any), maps slot names to group names via slot_mappings, and produces a list of `RouteBindingPayload` for the pipeline.
 2. **Fetch subscriptions** - `_fetch_subscriptions()` derives subscription IDs from filtered group rules (first-seen order), fetches `SubscriptionSource` rows from DB.
 3. **Fetch rule sources** - `_fetch_rule_sources()` fetches `RuleSource` rows referenced by resolved route bindings.
-3. **Load subscriptions** - Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
-4. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
-5. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
-6. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
-7. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
-8. **Route groups + rule-providers** - Each binding generates:
+4. **Load subscriptions** - Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
+5. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
+6. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
+7. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
+8. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
+9. **Route groups + rule-providers** - Each binding generates:
    - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
    - A `rule-providers` entry pointing to `{request_base_url}/api/public/rules/{rule_id}.yaml` (base URL derived from the incoming HTTP request)
    - A `RULE-SET,{provider_key},{binding_name}` rules line
-9. **Final match group** - `build_final_match_group()` creates a `select` proxy-group named "Final" with the user's chosen default target (DIRECT/REJECT/group) as first member, followed by `[DIRECT, manual_groups, filtered_groups, REJECT]` (deduped). Appends `MATCH,Final` as the last rule.
-10. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
-11. **Merge** - Generated sections replace `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
+10. **Final match group** - `build_final_match_group()` creates a `select` proxy-group named "Final" with the user's chosen default target (DIRECT/REJECT/group) as first member, followed by `[DIRECT, manual_groups, filtered_groups, REJECT]` (deduped). Appends `MATCH,Final` as the last rule.
+11. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
+12. **Merge** - Generated sections replace `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
 
 Proxy group order in output: filtered_groups -> manual_groups -> route_groups.
 
@@ -373,18 +373,18 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 
 ## Environment Variables (`backend/app/config.py`)
 
-| Variable                   | Default                                | Notes                                |
-| -------------------------- | -------------------------------------- | ------------------------------------ |
-| `ADMIN_TOKEN`              | `change-me`                            | Bearer token for admin APIs          |
-| `DATABASE_URL`             | `sqlite+aiosqlite:///./db.sqlite3`     |                                      |
-| `API_PREFIX`               | `/api`                                 |                                      |
-| `CORS_ORIGINS`             | `["http://localhost:3000", ...]`       |                                      |
-| `REFRESH_LOOP_TICK_SEC`    | `15`                                   | Background refresh check interval    |
-| `REQUEST_TIMEOUT_SEC`      | `30.0`                                 | HTTP fetch timeout                   |
-| `MIN_REFRESH_INTERVAL_SEC` | `60`                                   | Clamp for auto-update interval       |
-| `MAX_REFRESH_INTERVAL_SEC` | `86400`                                | Clamp for auto-update interval       |
-| `DEFAULT_TEST_URL`         | `https://www.gstatic.com/generate_204` | Fallback for group test_url          |
-| `DEFAULT_TEST_INTERVAL`    | `300`                                  | Fallback for group test_interval     |
+| Variable                   | Default                                | Notes                             |
+| -------------------------- | -------------------------------------- | --------------------------------- |
+| `ADMIN_TOKEN`              | `change-me`                            | Bearer token for admin APIs       |
+| `DATABASE_URL`             | `sqlite+aiosqlite:///./db.sqlite3`     |                                   |
+| `API_PREFIX`               | `/api`                                 |                                   |
+| `CORS_ORIGINS`             | `["http://localhost:3000", ...]`       |                                   |
+| `REFRESH_LOOP_TICK_SEC`    | `15`                                   | Background refresh check interval |
+| `REQUEST_TIMEOUT_SEC`      | `30.0`                                 | HTTP fetch timeout                |
+| `MIN_REFRESH_INTERVAL_SEC` | `60`                                   | Clamp for auto-update interval    |
+| `MAX_REFRESH_INTERVAL_SEC` | `86400`                                | Clamp for auto-update interval    |
+| `DEFAULT_TEST_URL`         | `https://www.gstatic.com/generate_204` | Fallback for group test_url       |
+| `DEFAULT_TEST_INTERVAL`    | `300`                                  | Fallback for group test_interval  |
 
 ## Background Refresh
 
