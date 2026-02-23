@@ -225,15 +225,17 @@ export default function RouteTemplatesPage() {
                           </Form.Item>
                         </Col>
                         <Col>
-                          <Tooltip title="Insert Above">
-                            <Button icon={<InsertAboveOutlined />} onClick={() => add({ name: "" }, field.name)} />
-                          </Tooltip>
-                          <Tooltip title="Insert Below">
-                            <Button icon={<InsertBelowOutlined />} onClick={() => add({ name: "" }, field.name + 1)} />
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
-                          </Tooltip>
+                          <Space size={4}>
+                            <Tooltip title="Insert Above">
+                              <Button icon={<InsertAboveOutlined />} onClick={() => add({ name: "" }, field.name)} />
+                            </Tooltip>
+                            <Tooltip title="Insert Below">
+                              <Button icon={<InsertBelowOutlined />} onClick={() => add({ name: "" }, field.name + 1)} />
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                            </Tooltip>
+                          </Space>
                         </Col>
                       </Row>
                     </Card>
@@ -289,15 +291,17 @@ export default function RouteTemplatesPage() {
                           </Form.Item>
                         </Col>
                         <Col xs={12} sm={4}>
-                          <Tooltip title="Insert Above">
-                            <Button icon={<InsertAboveOutlined />} onClick={() => add({ binding_name: "", rule_source_id: "", default_target: "", no_resolve: false }, field.name)} />
-                          </Tooltip>
-                          <Tooltip title="Insert Below">
-                            <Button icon={<InsertBelowOutlined />} onClick={() => add({ binding_name: "", rule_source_id: "", default_target: "", no_resolve: false }, field.name + 1)} />
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
-                          </Tooltip>
+                          <Space size={4}>
+                            <Tooltip title="Insert Above">
+                              <Button icon={<InsertAboveOutlined />} onClick={() => add({ binding_name: "", rule_source_id: "", default_target: "", no_resolve: false }, field.name)} />
+                            </Tooltip>
+                            <Tooltip title="Insert Below">
+                              <Button icon={<InsertBelowOutlined />} onClick={() => add({ binding_name: "", rule_source_id: "", default_target: "", no_resolve: false }, field.name + 1)} />
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                            </Tooltip>
+                          </Space>
                         </Col>
                       </Row>
                     </Card>

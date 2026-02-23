@@ -567,6 +567,7 @@ export default function MainConfigEditorDrawer({
                                             </Form.Item>
                                           </Col>
                                           <Col xs={24} sm={5}>
+                                            <Space size={4}>
                                               <Tooltip title="Insert Above">
                                                 <Button
                                                   icon={<InsertAboveOutlined />}
@@ -595,6 +596,7 @@ export default function MainConfigEditorDrawer({
                                                   }}
                                                 />
                                               </Tooltip>
+                                            </Space>
                                           </Col>
                                         </Row>
                                         {(() => {
@@ -802,6 +804,7 @@ export default function MainConfigEditorDrawer({
                                             </Form.Item>
                                           </Col>
                                           <Col xs={24} sm={4}>
+                                            <Space size={4}>
                                               <Tooltip title="Insert Above">
                                                 <Button icon={<InsertAboveOutlined />} onClick={() => memberOps.add({ member_type: "filtered_group", member_ref: "" }, memberField.name)} />
                                               </Tooltip>
@@ -811,6 +814,7 @@ export default function MainConfigEditorDrawer({
                                               <Tooltip title="Delete">
                                                 <Button danger icon={<DeleteOutlined />} onClick={() => memberOps.remove(memberField.name)} />
                                               </Tooltip>
+                                            </Space>
                                           </Col>
                                         </Row>
                                       </Card>
@@ -884,6 +888,7 @@ export default function MainConfigEditorDrawer({
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={3}>
+                        <Space size={4}>
                           <Tooltip title="Insert Above">
                             <Button icon={<InsertAboveOutlined />} onClick={() => add({ filtered_group_name: "", dialer_group_name: "" }, field.name)} />
                           </Tooltip>
@@ -893,6 +898,7 @@ export default function MainConfigEditorDrawer({
                           <Tooltip title="Delete">
                             <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                           </Tooltip>
+                        </Space>
                       </Col>
                     </Row>
                   </Card>
