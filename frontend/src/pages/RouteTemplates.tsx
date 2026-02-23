@@ -15,6 +15,7 @@ import {
   message,
 } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { InsertAboveOutlined, InsertBelowOutlined } from "@/components/icons";
 import { useEffect, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 import type { RouteTemplate, RuleSourceListItem } from "@/types/api";
@@ -224,6 +225,12 @@ export default function RouteTemplatesPage() {
                           </Form.Item>
                         </Col>
                         <Col>
+                          <Tooltip title="Insert Above">
+                            <Button icon={<InsertAboveOutlined />} onClick={() => add({ name: "" }, field.name)} />
+                          </Tooltip>
+                          <Tooltip title="Insert Below">
+                            <Button icon={<InsertBelowOutlined />} onClick={() => add({ name: "" }, field.name + 1)} />
+                          </Tooltip>
                           <Tooltip title="Delete">
                             <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                           </Tooltip>
@@ -247,11 +254,11 @@ export default function RouteTemplatesPage() {
                 <strong>Bindings</strong>
                 <SortableFormList fields={fields} move={move} idPrefix="binding">
                   {(field, _index, dragHandle) => (
-                    <Card size="small">
-                      <Row gutter={12}>
-                        <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{dragHandle}</Col>
-                        <Col xs={23} sm={6}>
-                          <Form.Item name={[field.name, "rule_source_id"]} label="Rule Source" rules={[{ required: true }]}>
+                    <Card size="small" style={{ marginBottom: 0 }}>
+                      <Row gutter={12} align="middle">
+                        <Col xs={1}>{dragHandle}</Col>
+                        <Col xs={23} sm={5}>
+                          <Form.Item name={[field.name, "rule_source_id"]} label="Rule Source" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
                             <Select
                               options={rules.map((r) => ({ label: `${r.name} (${r.behavior})`, value: r.id }))}
                               showSearch
@@ -264,7 +271,7 @@ export default function RouteTemplatesPage() {
                               const ruleSourceId = form.getFieldValue(["bindings", field.name, "rule_source_id"]) as string | undefined;
                               const ruleName = rules.find((r) => r.id === ruleSourceId)?.name;
                               return (
-                                <Form.Item name={[field.name, "binding_name"]} label="Binding Name">
+                                <Form.Item name={[field.name, "binding_name"]} label="Binding Name" style={{ marginBottom: 0 }}>
                                   <Input placeholder={ruleName || "Same as rule source"} />
                                 </Form.Item>
                               );
@@ -272,21 +279,25 @@ export default function RouteTemplatesPage() {
                           </Form.Item>
                         </Col>
                         <Col xs={24} sm={5}>
-                          <Form.Item name={[field.name, "default_target"]} label="Default Target" rules={[{ required: true }]}>
+                          <Form.Item name={[field.name, "default_target"]} label="Default Target" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
                             <Select options={slotTargetOptions} showSearch />
                           </Form.Item>
                         </Col>
                         <Col xs={12} sm={3}>
-                          <Form.Item name={[field.name, "no_resolve"]} label="No Resolve" valuePropName="checked">
+                          <Form.Item name={[field.name, "no_resolve"]} label="No Resolve" valuePropName="checked" style={{ marginBottom: 0 }}>
                             <Switch />
                           </Form.Item>
                         </Col>
-                        <Col xs={12} sm={3}>
-                          <Form.Item label=" ">
-                            <Tooltip title="Delete">
-                              <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
-                            </Tooltip>
-                          </Form.Item>
+                        <Col xs={12} sm={4}>
+                          <Tooltip title="Insert Above">
+                            <Button icon={<InsertAboveOutlined />} onClick={() => add({ binding_name: "", rule_source_id: "", default_target: "", no_resolve: false }, field.name)} />
+                          </Tooltip>
+                          <Tooltip title="Insert Below">
+                            <Button icon={<InsertBelowOutlined />} onClick={() => add({ binding_name: "", rule_source_id: "", default_target: "", no_resolve: false }, field.name + 1)} />
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                          </Tooltip>
                         </Col>
                       </Row>
                     </Card>

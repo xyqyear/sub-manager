@@ -21,6 +21,7 @@ import {
   message,
 } from "antd";
 import { CloseOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined } from "@ant-design/icons";
+import { InsertAboveOutlined, InsertBelowOutlined } from "@/components/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   FilteredGroupPreviewResponse,
@@ -454,6 +455,28 @@ export default function MainConfigEditorDrawer({
                         extra: (
                           <Space size={4}>
                             {dragHandle}
+                            <Tooltip title="Insert Above">
+                              <Button
+                                size="small"
+                                icon={<InsertAboveOutlined />}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  add({ name: "", group_mode: "select", copy_nodes: false, rules: [] }, field.name);
+                                  queueFilteredGroupPreview();
+                                }}
+                              />
+                            </Tooltip>
+                            <Tooltip title="Insert Below">
+                              <Button
+                                size="small"
+                                icon={<InsertBelowOutlined />}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  add({ name: "", group_mode: "select", copy_nodes: false, rules: [] }, field.name + 1);
+                                  queueFilteredGroupPreview();
+                                }}
+                              />
+                            </Tooltip>
                             <Popconfirm
                               title="Remove this filtered group?"
                               onConfirm={() => {
@@ -507,13 +530,14 @@ export default function MainConfigEditorDrawer({
                                   <SortableFormList fields={ruleFields} move={ruleOps.move} onAfterMove={() => queueFilteredGroupPreview()} idPrefix={`fg-${field.key}-rule`}>
                                     {(ruleField, _ruleIndex, ruleDragHandle) => (
                                       <Card size="small">
-                                        <Row gutter={12}>
-                                          <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{ruleDragHandle}</Col>
-                                          <Col xs={23} sm={8}>
+                                        <Row gutter={12} align="middle">
+                                          <Col xs={1}>{ruleDragHandle}</Col>
+                                          <Col xs={23} sm={7}>
                                             <Form.Item
                                               name={[ruleField.name, "subscription_source_id"]}
                                               label="Subscription"
                                               rules={[{ required: true }]}
+                                              style={{ marginBottom: 0 }}
                                             >
                                               <Select
                                                 options={subscriptions.map((item) => ({
@@ -529,20 +553,38 @@ export default function MainConfigEditorDrawer({
                                               name={[ruleField.name, "regex_pattern"]}
                                               label="Regex"
                                               rules={[{ required: true }]}
+                                              style={{ marginBottom: 0 }}
                                             >
                                               <Input onBlur={() => void triggerFilteredGroupPreview()} />
                                             </Form.Item>
                                           </Col>
                                           <Col xs={8} sm={4}>
-                                            <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags">
+                                            <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags" style={{ marginBottom: 0 }}>
                                               <Input
                                                 placeholder="i"
                                                 onBlur={() => void triggerFilteredGroupPreview()}
                                               />
                                             </Form.Item>
                                           </Col>
-                                          <Col xs={24} sm={3}>
-                                            <Form.Item label=" ">
+                                          <Col xs={24} sm={5}>
+                                              <Tooltip title="Insert Above">
+                                                <Button
+                                                  icon={<InsertAboveOutlined />}
+                                                  onClick={() => {
+                                                    ruleOps.add({ subscription_source_id: "", regex_pattern: ".*", regex_flags: "" }, ruleField.name);
+                                                    queueFilteredGroupPreview();
+                                                  }}
+                                                />
+                                              </Tooltip>
+                                              <Tooltip title="Insert Below">
+                                                <Button
+                                                  icon={<InsertBelowOutlined />}
+                                                  onClick={() => {
+                                                    ruleOps.add({ subscription_source_id: "", regex_pattern: ".*", regex_flags: "" }, ruleField.name + 1);
+                                                    queueFilteredGroupPreview();
+                                                  }}
+                                                />
+                                              </Tooltip>
                                               <Tooltip title="Delete">
                                                 <Button
                                                   danger
@@ -553,7 +595,6 @@ export default function MainConfigEditorDrawer({
                                                   }}
                                                 />
                                               </Tooltip>
-                                            </Form.Item>
                                           </Col>
                                         </Row>
                                         {(() => {
@@ -637,6 +678,26 @@ export default function MainConfigEditorDrawer({
                         extra: (
                           <Space size={4}>
                             {dragHandle}
+                            <Tooltip title="Insert Above">
+                              <Button
+                                size="small"
+                                icon={<InsertAboveOutlined />}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  add({ name: "", group_mode: "select", members: [] }, field.name);
+                                }}
+                              />
+                            </Tooltip>
+                            <Tooltip title="Insert Below">
+                              <Button
+                                size="small"
+                                icon={<InsertBelowOutlined />}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  add({ name: "", group_mode: "select", members: [] }, field.name + 1);
+                                }}
+                              />
+                            </Tooltip>
                             <Popconfirm
                               title="Remove this manual group?"
                               onConfirm={() => remove(field.name)}
@@ -682,13 +743,14 @@ export default function MainConfigEditorDrawer({
                                   <SortableFormList fields={memberFields} move={memberOps.move} idPrefix={`mg-${field.key}-member`}>
                                     {(memberField, _memberIndex, memberDragHandle) => (
                                       <Card size="small">
-                                        <Row gutter={12}>
-                                          <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{memberDragHandle}</Col>
+                                        <Row gutter={12} align="middle">
+                                          <Col xs={1}>{memberDragHandle}</Col>
                                           <Col xs={23} sm={6}>
                                             <Form.Item
                                               name={[memberField.name, "member_type"]}
                                               label="Type"
                                               rules={[{ required: true }]}
+                                              style={{ marginBottom: 0 }}
                                             >
                                               <Select
                                                 options={[
@@ -698,7 +760,7 @@ export default function MainConfigEditorDrawer({
                                               />
                                             </Form.Item>
                                           </Col>
-                                          <Col xs={24} sm={11}>
+                                          <Col xs={24} sm={10}>
                                             <Form.Item noStyle shouldUpdate>
                                               {() => {
                                                 const memberType = form.getFieldValue([
@@ -715,6 +777,7 @@ export default function MainConfigEditorDrawer({
                                                       name={[memberField.name, "member_ref"]}
                                                       label="Member"
                                                       rules={[{ required: true }]}
+                                                      style={{ marginBottom: 0 }}
                                                     >
                                                       <Select options={filteredGroupOptions} showSearch />
                                                     </Form.Item>
@@ -727,6 +790,7 @@ export default function MainConfigEditorDrawer({
                                                       name={[memberField.name, "member_ref"]}
                                                       label="Member"
                                                       rules={[{ required: true }]}
+                                                      style={{ marginBottom: 0 }}
                                                     >
                                                       <Select options={manualGroupOptions} showSearch />
                                                     </Form.Item>
@@ -737,12 +801,16 @@ export default function MainConfigEditorDrawer({
                                               }}
                                             </Form.Item>
                                           </Col>
-                                          <Col xs={24} sm={3}>
-                                            <Form.Item label=" ">
+                                          <Col xs={24} sm={4}>
+                                              <Tooltip title="Insert Above">
+                                                <Button icon={<InsertAboveOutlined />} onClick={() => memberOps.add({ member_type: "filtered_group", member_ref: "" }, memberField.name)} />
+                                              </Tooltip>
+                                              <Tooltip title="Insert Below">
+                                                <Button icon={<InsertBelowOutlined />} onClick={() => memberOps.add({ member_type: "filtered_group", member_ref: "" }, memberField.name + 1)} />
+                                              </Tooltip>
                                               <Tooltip title="Delete">
                                                 <Button danger icon={<DeleteOutlined />} onClick={() => memberOps.remove(memberField.name)} />
                                               </Tooltip>
-                                            </Form.Item>
                                           </Col>
                                         </Row>
                                       </Card>
@@ -793,13 +861,14 @@ export default function MainConfigEditorDrawer({
               <SortableFormList fields={fields} move={move} idPrefix="dor">
                 {(field, _index, dragHandle) => (
                   <Card size="small">
-                    <Row gutter={12}>
-                      <Col xs={1} style={{ display: "flex", alignItems: "center" }}>{dragHandle}</Col>
+                    <Row gutter={12} align="middle">
+                      <Col xs={1}>{dragHandle}</Col>
                       <Col xs={23} sm={10}>
                         <Form.Item
                           name={[field.name, "filtered_group_name"]}
                           label="Filtered Group"
                           rules={[{ required: true }]}
+                          style={{ marginBottom: 0 }}
                         >
                           <Select options={filteredGroupOptions} showSearch />
                         </Form.Item>
@@ -809,16 +878,21 @@ export default function MainConfigEditorDrawer({
                           name={[field.name, "dialer_group_name"]}
                           label="Dialer Group"
                           rules={[{ required: true }]}
+                          style={{ marginBottom: 0 }}
                         >
                           <Select options={nonRouteGroupOptions} showSearch />
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={3}>
-                        <Form.Item label=" ">
+                          <Tooltip title="Insert Above">
+                            <Button icon={<InsertAboveOutlined />} onClick={() => add({ filtered_group_name: "", dialer_group_name: "" }, field.name)} />
+                          </Tooltip>
+                          <Tooltip title="Insert Below">
+                            <Button icon={<InsertBelowOutlined />} onClick={() => add({ filtered_group_name: "", dialer_group_name: "" }, field.name + 1)} />
+                          </Tooltip>
                           <Tooltip title="Delete">
                             <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                           </Tooltip>
-                        </Form.Item>
                       </Col>
                     </Row>
                   </Card>
