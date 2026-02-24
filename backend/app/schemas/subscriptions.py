@@ -24,6 +24,7 @@ class SubscriptionCreate(BaseModel):
 
 class SubscriptionUpdate(BaseModel):
     name: str | None = None
+    mode: SourceMode | None = None
     enabled: bool | None = None
 
     remote_url: str | None = None

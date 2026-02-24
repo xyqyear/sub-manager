@@ -116,27 +116,38 @@ async def update_rule(db: AsyncSession, source: RuleSource, payload: RuleUpdate)
     if payload.behavior is not None:
         source.behavior = payload.behavior
 
-    if source.mode == "remote":
+    effective_mode = payload.mode if payload.mode is not None else source.mode
+    mode_changed = payload.mode is not None and payload.mode != source.mode
+
+    if mode_changed:
+        source.mode = effective_mode
+
+    if effective_mode == "remote":
+        if mode_changed and not (payload.remote_url or source.remote_url):
+            raise ServiceError("remote mode requires remote_url", 422)
         if payload.remote_url is not None:
             source.remote_url = payload.remote_url
         if payload.auto_update is not None:
             source.auto_update = payload.auto_update
         if payload.update_interval_sec is not None:
             source.update_interval_sec = _normalize_interval(payload.update_interval_sec)
-
         source.next_refresh_at = (
             next_refresh_time(source.update_interval_sec) if source.auto_update else None
         )
-
     else:
-        if payload.payload_lines is not None:
+        if mode_changed and payload.payload_lines is None:
+            raise ServiceError("manual mode requires payload_lines", 422)
+        if mode_changed or payload.payload_lines is not None:
             source.cached_payload_lines_json = validate_rule_payload_lines(
                 source.behavior,
-                payload.payload_lines,
+                payload.payload_lines or [],
             )
             source.last_status = "ok"
             source.last_error = None
             source.last_refresh_at = utc_now()
+        if mode_changed:
+            source.auto_update = False
+            source.next_refresh_at = None
 
     db.add(source)
     await db.commit()

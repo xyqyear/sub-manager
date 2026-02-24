@@ -25,6 +25,7 @@ class RuleCreate(BaseModel):
 
 class RuleUpdate(BaseModel):
     name: str | None = None
+    mode: SourceMode | None = None
     behavior: RuleBehavior | None = None
     enabled: bool | None = None
 

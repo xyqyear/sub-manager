@@ -124,7 +124,15 @@ async def update_subscription(
     if payload.enabled is not None:
         source.enabled = payload.enabled
 
-    if source.mode == "remote":
+    effective_mode = payload.mode if payload.mode is not None else source.mode
+    mode_changed = payload.mode is not None and payload.mode != source.mode
+
+    if mode_changed:
+        source.mode = effective_mode
+
+    if effective_mode == "remote":
+        if mode_changed and not (payload.remote_url or source.remote_url):
+            raise ServiceError("remote mode requires remote_url", 422)
         if payload.remote_url is not None:
             source.remote_url = payload.remote_url
         if payload.remote_auth_header is not None:
@@ -133,18 +141,22 @@ async def update_subscription(
             source.auto_update = payload.auto_update
         if payload.update_interval_sec is not None:
             source.update_interval_sec = _normalize_interval(payload.update_interval_sec)
-        if source.auto_update:
-            source.next_refresh_at = next_refresh_time(source.update_interval_sec)
-        else:
-            source.next_refresh_at = None
+        source.next_refresh_at = (
+            next_refresh_time(source.update_interval_sec) if source.auto_update else None
+        )
     else:
-        if payload.proxy_yaml_object_text is not None:
+        if mode_changed or payload.proxy_yaml_object_text is not None:
             proxy_list = _validate_manual_proxy_text(payload.proxy_yaml_object_text)
             source.cached_proxies_json = proxy_list
             source.cached_raw_yaml = yaml_dump({"proxies": proxy_list})
             source.last_status = "ok"
             source.last_error = None
             source.last_refresh_at = utc_now()
+        if mode_changed:
+            source.subscription_userinfo_raw = None
+            source.subscription_userinfo_json = None
+            source.auto_update = False
+            source.next_refresh_at = None
 
     db.add(source)
     await db.commit()
