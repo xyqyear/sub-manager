@@ -642,10 +642,10 @@ async def _fetch_subscriptions(
 
     sub_map: dict[str, SubscriptionSource] = {}
     if sub_ids_ordered:
-        result = await db.execute(
+        result = await db.scalars(
             select(SubscriptionSource).where(SubscriptionSource.id.in_(sub_ids_ordered))
         )
-        sub_map = {item.id: item for item in result.scalars().all()}
+        sub_map = {item.id: item for item in result.all()}
 
     return sub_ids_ordered, sub_map
 
@@ -657,8 +657,8 @@ async def _fetch_rule_sources(
     rule_ids = [rb.rule_source_id for rb in route_bindings]
     if not rule_ids:
         return {}
-    result = await db.execute(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
-    return {item.id: item for item in result.scalars().all()}
+    result = await db.scalars(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
+    return {item.id: item for item in result.all()}
 
 
 # ---------------------------------------------------------------------------

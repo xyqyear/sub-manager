@@ -4,7 +4,7 @@ from ipaddress import ip_network
 from typing import Any
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -61,9 +61,8 @@ async def _assert_unique_name(db: AsyncSession, name: str, exclude_id: str | Non
     query = select(RuleSource).where(RuleSource.name == name)
     if exclude_id:
         query = query.where(RuleSource.id != exclude_id)
-    result = await db.execute(query)
-    found = result.scalars().first()
-    if found:
+    found = await db.scalars(query)
+    if found.first():
         raise ServiceError(f"rule name already exists: {name}", 409)
 
 
@@ -223,8 +222,8 @@ async def get_rule_or_404(db: AsyncSession, rule_id: str) -> RuleSource:
 
 
 async def list_rules(db: AsyncSession) -> list[RuleSource]:
-    result = await db.execute(select(RuleSource).order_by(RuleSource.position.asc(), RuleSource.created_at.desc()))
-    return list(result.scalars().all())
+    result = await db.scalars(select(RuleSource).order_by(RuleSource.position.asc(), RuleSource.created_at.desc()))
+    return list(result.all())
 
 
 async def list_rules_summary(db: AsyncSession) -> list[dict[str, Any]]:
@@ -248,7 +247,7 @@ async def delete_rule(db: AsyncSession, source: RuleSource) -> None:
 
 async def get_due_rule_ids(db: AsyncSession) -> list[str]:
     now = utc_now()
-    result = await db.execute(
+    result = await db.scalars(
         select(RuleSource.id).where(
             RuleSource.mode == "remote",
             RuleSource.auto_update.is_(True),
@@ -257,14 +256,14 @@ async def get_due_rule_ids(db: AsyncSession) -> list[str]:
             RuleSource.next_refresh_at <= now,
         )
     )
-    return [item for item in result.scalars().all()]
+    return list(result.all())
 
 
 async def reorder_rules(db: AsyncSession, payload: ReorderRequest) -> None:
     for item in payload.items:
         await db.execute(
-            RuleSource.__table__.update()
-            .where(RuleSource.__table__.c.id == item.id)
+            update(RuleSource)
+            .where(RuleSource.id == item.id)
             .values(position=item.position)
         )
     await db.commit()

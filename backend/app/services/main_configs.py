@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     MainConfig,
     RouteTemplate,
-    RuleSource,
     SubscriptionSource,
 )
 from app.schemas.configs import (
+    DialerOverridePayload,
     FilteredGroupPayload,
     FilteredGroupPreviewItem,
     FilteredGroupPreviewRequest,
@@ -20,7 +20,6 @@ from app.schemas.configs import (
     MainConfigCreate,
     MainConfigUpdate,
     ManualGroupPayload,
-    DialerOverridePayload,
     SlotMappingPayload,
 )
 from app.schemas.reorder import ReorderRequest
@@ -36,9 +35,8 @@ async def _assert_unique_config_name(db: AsyncSession, name: str, exclude_id: st
     query = select(MainConfig).where(MainConfig.name == name)
     if exclude_id:
         query = query.where(MainConfig.id != exclude_id)
-    result = await db.execute(query)
-    found = result.scalars().first()
-    if found:
+    found = await db.scalars(query)
+    if found.first():
         raise ServiceError(f"main config name already exists: {name}", 409)
 
 
@@ -70,7 +68,7 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
     group_name_set = _collect_group_names(payload.filtered_groups, payload.manual_groups)
     await validate_slot_mappings(db, payload.route_template_id, payload.slot_mappings, group_name_set)
 
-    max_pos = (await db.execute(select(func.coalesce(func.max(MainConfig.position), -1)))).scalar()
+    max_pos = (await db.execute(select(func.coalesce(func.max(MainConfig.position), -1)))).scalar_one()
 
     config = MainConfig(
         name=payload.name,
@@ -150,8 +148,8 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
 
 
 async def list_main_configs(db: AsyncSession) -> list[MainConfig]:
-    result = await db.execute(select(MainConfig).order_by(MainConfig.position.asc(), MainConfig.created_at.desc()))
-    return list(result.scalars().all())
+    result = await db.scalars(select(MainConfig).order_by(MainConfig.position.asc(), MainConfig.created_at.desc()))
+    return list(result.all())
 
 
 async def get_main_config_or_404(db: AsyncSession, config_id: str) -> MainConfig:
@@ -176,10 +174,10 @@ async def validate_builder_refs(
         for rule in group.rules
     }
     if subscription_ids:
-        result = await db.execute(
+        result = await db.scalars(
             select(SubscriptionSource.id).where(SubscriptionSource.id.in_(subscription_ids))
         )
-        found = set(result.scalars().all())
+        found = set(result.all())
         missing = subscription_ids - found
         if missing:
             raise ServiceError(f"unknown subscription_source_id: {sorted(missing)}", 422)
@@ -314,12 +312,12 @@ async def preview_filtered_group_matches(
 
     subscription_map: dict[str, SubscriptionSource] = {}
     if subscription_ids:
-        result = await db.execute(
+        result = await db.scalars(
             select(SubscriptionSource).where(SubscriptionSource.id.in_(subscription_ids))
         )
         subscription_map = {
             row.id: row
-            for row in result.scalars().all()
+            for row in result.all()
         }
 
     ordered_sources: list[OrderedSource] = []
@@ -397,8 +395,8 @@ async def preview_filtered_group_matches(
 async def reorder_main_configs(db: AsyncSession, payload: ReorderRequest) -> None:
     for item in payload.items:
         await db.execute(
-            MainConfig.__table__.update()
-            .where(MainConfig.__table__.c.id == item.id)
+            update(MainConfig)
+            .where(MainConfig.id == item.id)
             .values(position=item.position)
         )
     await db.commit()

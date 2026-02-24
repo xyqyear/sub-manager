@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import MainConfig, RouteTemplate, RuleSource
@@ -18,8 +18,8 @@ async def _assert_unique_template_name(db: AsyncSession, name: str, exclude_id: 
     query = select(RouteTemplate).where(RouteTemplate.name == name)
     if exclude_id:
         query = query.where(RouteTemplate.id != exclude_id)
-    result = await db.execute(query)
-    if result.scalars().first():
+    found = await db.scalars(query)
+    if found.first():
         raise ServiceError(f"route template name already exists: {name}", 409)
 
 
@@ -54,8 +54,8 @@ async def validate_template_refs(
     rule_ids = {b.rule_source_id for b in bindings}
     if not rule_ids:
         return
-    result = await db.execute(select(RuleSource.id).where(RuleSource.id.in_(rule_ids)))
-    found = set(result.scalars().all())
+    result = await db.scalars(select(RuleSource.id).where(RuleSource.id.in_(rule_ids)))
+    found = set(result.all())
     missing = rule_ids - found
     if missing:
         raise ServiceError(f"unknown rule_source_id: {sorted(missing)}", 422)
@@ -104,8 +104,8 @@ async def update_route_template(
 
 
 async def list_route_templates(db: AsyncSession) -> list[RouteTemplate]:
-    result = await db.execute(select(RouteTemplate).order_by(RouteTemplate.position.asc(), RouteTemplate.created_at.desc()))
-    return list(result.scalars().all())
+    result = await db.scalars(select(RouteTemplate).order_by(RouteTemplate.position.asc(), RouteTemplate.created_at.desc()))
+    return list(result.all())
 
 
 async def get_route_template_or_404(db: AsyncSession, template_id: str) -> RouteTemplate:
@@ -116,10 +116,10 @@ async def get_route_template_or_404(db: AsyncSession, template_id: str) -> Route
 
 
 async def delete_route_template(db: AsyncSession, template: RouteTemplate) -> None:
-    result = await db.execute(
+    result = await db.scalars(
         select(MainConfig.id).where(MainConfig.route_template_id == template.id).limit(1)
     )
-    if result.scalars().first():
+    if result.first():
         raise ServiceError("route template is referenced by a main config", 409)
     await db.delete(template)
     await db.commit()
@@ -128,8 +128,8 @@ async def delete_route_template(db: AsyncSession, template: RouteTemplate) -> No
 async def reorder_route_templates(db: AsyncSession, payload: ReorderRequest) -> None:
     for item in payload.items:
         await db.execute(
-            RouteTemplate.__table__.update()
-            .where(RouteTemplate.__table__.c.id == item.id)
+            update(RouteTemplate)
+            .where(RouteTemplate.id == item.id)
             .values(position=item.position)
         )
     await db.commit()

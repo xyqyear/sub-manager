@@ -4,7 +4,7 @@ import copy
 from typing import Any
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -67,9 +67,8 @@ async def _assert_unique_name(db: AsyncSession, name: str, exclude_id: str | Non
     query = select(SubscriptionSource).where(SubscriptionSource.name == name)
     if exclude_id:
         query = query.where(SubscriptionSource.id != exclude_id)
-    result = await db.execute(query)
-    found = result.scalars().first()
-    if found:
+    found = await db.scalars(query)
+    if found.first():
         raise ServiceError(f"subscription name already exists: {name}", 409)
 
 
@@ -80,7 +79,7 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
     update_interval_sec = _normalize_interval(payload.update_interval_sec)
     now = utc_now()
 
-    max_pos = (await db.execute(select(func.coalesce(func.max(SubscriptionSource.position), -1)))).scalar()
+    max_pos = (await db.execute(select(func.coalesce(func.max(SubscriptionSource.position), -1)))).scalar_one()
 
     source = SubscriptionSource(
         name=payload.name,
@@ -244,10 +243,10 @@ async def get_subscription_or_404(db: AsyncSession, subscription_id: str) -> Sub
 
 
 async def list_subscriptions(db: AsyncSession) -> list[SubscriptionSource]:
-    result = await db.execute(
+    result = await db.scalars(
         select(SubscriptionSource).order_by(SubscriptionSource.position.asc(), SubscriptionSource.created_at.desc())
     )
-    return list(result.scalars().all())
+    return list(result.all())
 
 
 async def list_subscriptions_summary(db: AsyncSession) -> list[dict[str, Any]]:
@@ -273,7 +272,7 @@ async def delete_subscription(db: AsyncSession, source: SubscriptionSource) -> N
 
 async def get_due_subscription_ids(db: AsyncSession) -> list[str]:
     now = utc_now()
-    result = await db.execute(
+    result = await db.scalars(
         select(SubscriptionSource.id).where(
             SubscriptionSource.mode == "remote",
             SubscriptionSource.auto_update.is_(True),
@@ -282,14 +281,14 @@ async def get_due_subscription_ids(db: AsyncSession) -> list[str]:
             SubscriptionSource.next_refresh_at <= now,
         )
     )
-    return [item for item in result.scalars().all()]
+    return list(result.all())
 
 
 async def reorder_subscriptions(db: AsyncSession, payload: ReorderRequest) -> None:
     for item in payload.items:
         await db.execute(
-            SubscriptionSource.__table__.update()
-            .where(SubscriptionSource.__table__.c.id == item.id)
+            update(SubscriptionSource)
+            .where(SubscriptionSource.id == item.id)
             .values(position=item.position)
         )
     await db.commit()
