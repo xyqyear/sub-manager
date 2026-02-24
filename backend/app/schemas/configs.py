@@ -4,12 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.schemas.common import UtcDatetime
-
-
-FinalTargetType = Literal["DIRECT", "REJECT", "group"]
-GroupMode = Literal["select", "fallback", "url-test"]
-MemberType = Literal["filtered_group", "manual_group"]
+from app.schemas.common import FinalTargetType, GroupMode, MemberType, UtcDatetime
 
 
 class SlotMappingPayload(BaseModel):
@@ -54,7 +49,7 @@ class MainConfigRead(BaseModel):
     name: str
     base_config_yaml: str
     enabled: bool
-    final_target_type: str
+    final_target_type: FinalTargetType
     final_target_group_name: str | None
     test_url: str | None
     test_interval_sec: int | None
@@ -140,7 +135,7 @@ class FilteredGroupPreviewResponse(BaseModel):
 
 
 class AdminHealthResponse(BaseModel):
-    status: str
+    status: Literal["ok"]
     refresh_loop_running: bool
 
 

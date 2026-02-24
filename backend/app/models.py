@@ -1,26 +1,31 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Any
-import uuid
 
 from pydantic import TypeAdapter
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Integer,
-    JSON,
     String,
     Text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
+from app.schemas.common import (
+    FinalTargetType,
+    LastStatus,
+    RuleBehavior,
+    SourceMode,
+)
 from app.schemas.configs import (
     DialerOverridePayload,
     FilteredGroupPayload,
     ManualGroupPayload,
-    RouteBindingPayload,
     SlotMappingPayload,
 )
 from app.schemas.route_templates import (
@@ -90,26 +95,38 @@ class SubscriptionSource(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    mode: Mapped[str] = mapped_column(String(16), nullable=False)  # remote|manual
+    mode: Mapped[SourceMode] = mapped_column(String(16), nullable=False)
     remote_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     remote_auth_header: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     auto_update: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    update_interval_sec: Mapped[int] = mapped_column(Integer, default=3600, nullable=False)
-    next_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
-    last_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    update_interval_sec: Mapped[int] = mapped_column(
+        Integer, default=3600, nullable=False
+    )
+    next_refresh_at: Mapped[datetime | None] = mapped_column(
+        TZDateTime(), nullable=True
+    )
+    last_refresh_at: Mapped[datetime | None] = mapped_column(
+        TZDateTime(), nullable=True
+    )
 
-    last_status: Mapped[str] = mapped_column(String(16), default="never", nullable=False)
+    last_status: Mapped[LastStatus] = mapped_column(
+        String(16), default="never", nullable=False
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     subscription_userinfo_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
-    subscription_userinfo_json: Mapped[list[dict[str, int]] | dict[str, int] | None] = mapped_column(
-        JSON,
-        nullable=True,
+    subscription_userinfo_json: Mapped[list[dict[str, int]] | dict[str, int] | None] = (
+        mapped_column(
+            JSON,
+            nullable=True,
+        )
     )
 
     cached_raw_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cached_proxies_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    cached_proxies_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )
 
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -125,19 +142,29 @@ class RuleSource(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    mode: Mapped[str] = mapped_column(String(16), nullable=False)  # remote|manual
-    behavior: Mapped[str] = mapped_column(String(16), nullable=False)  # classical|domain|ipcidr
+    mode: Mapped[SourceMode] = mapped_column(String(16), nullable=False)
+    behavior: Mapped[RuleBehavior] = mapped_column(String(16), nullable=False)
     remote_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     auto_update: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    update_interval_sec: Mapped[int] = mapped_column(Integer, default=3600, nullable=False)
-    next_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
-    last_refresh_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    update_interval_sec: Mapped[int] = mapped_column(
+        Integer, default=3600, nullable=False
+    )
+    next_refresh_at: Mapped[datetime | None] = mapped_column(
+        TZDateTime(), nullable=True
+    )
+    last_refresh_at: Mapped[datetime | None] = mapped_column(
+        TZDateTime(), nullable=True
+    )
 
-    last_status: Mapped[str] = mapped_column(String(16), default="never", nullable=False)
+    last_status: Mapped[LastStatus] = mapped_column(
+        String(16), default="never", nullable=False
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    cached_payload_lines_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    cached_payload_lines_json: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
 
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -154,12 +181,14 @@ class MainConfig(Base, TimestampMixin):
     base_config_yaml: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    final_target_type: Mapped[str] = mapped_column(
+    final_target_type: Mapped[FinalTargetType] = mapped_column(
         String(16),
         default="DIRECT",
         nullable=False,
-    )  # DIRECT|REJECT|group
-    final_target_group_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    )
+    final_target_group_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
 
     test_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     test_interval_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)

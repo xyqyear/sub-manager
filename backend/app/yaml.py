@@ -22,7 +22,6 @@ class _DumpYAML(YAML):
 _dump_yaml = _DumpYAML(typ="safe", pure=True)
 _dump_yaml.default_flow_style = False
 _dump_yaml.allow_unicode = True
-_dump_yaml.sort_keys = False
 
 
 class YAMLError(Exception):

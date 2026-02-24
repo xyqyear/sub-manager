@@ -4,9 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.schemas.common import UtcDatetime
-
-SourceMode = Literal["remote", "manual"]
+from app.schemas.common import LastStatus, SourceMode, UtcDatetime
 
 
 class SubscriptionCreate(BaseModel):
@@ -51,7 +49,7 @@ class SubscriptionRead(BaseModel):
     next_refresh_at: UtcDatetime | None
     last_refresh_at: UtcDatetime | None
 
-    last_status: str
+    last_status: LastStatus
     last_error: str | None
     subscription_userinfo_raw: str | None
     subscription_userinfo_json: dict[str, int] | None
@@ -78,7 +76,7 @@ class SubscriptionListItem(BaseModel):
     next_refresh_at: UtcDatetime | None
     last_refresh_at: UtcDatetime | None
 
-    last_status: str
+    last_status: LastStatus
     last_error: str | None
     subscription_userinfo_raw: str | None
     subscription_userinfo_json: dict[str, int] | None
@@ -91,5 +89,5 @@ class SubscriptionListItem(BaseModel):
 
 class SubscriptionRefreshResponse(BaseModel):
     id: str
-    status: str
+    status: LastStatus | Literal["queued"]
     detail: str

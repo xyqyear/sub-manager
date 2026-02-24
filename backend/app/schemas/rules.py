@@ -4,10 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.schemas.common import UtcDatetime
-
-SourceMode = Literal["remote", "manual"]
-RuleBehavior = Literal["classical", "domain", "ipcidr"]
+from app.schemas.common import LastStatus, RuleBehavior, SourceMode, UtcDatetime
 
 
 class RuleCreate(BaseModel):
@@ -51,7 +48,7 @@ class RuleRead(BaseModel):
     next_refresh_at: UtcDatetime | None
     last_refresh_at: UtcDatetime | None
 
-    last_status: str
+    last_status: LastStatus
     last_error: str | None
     cached_payload_lines_json: list[str] | None
 
@@ -75,7 +72,7 @@ class RuleListItem(BaseModel):
     next_refresh_at: UtcDatetime | None
     last_refresh_at: UtcDatetime | None
 
-    last_status: str
+    last_status: LastStatus
     last_error: str | None
     cached_payload_lines_count: int | None
 
@@ -86,5 +83,5 @@ class RuleListItem(BaseModel):
 
 class RuleRefreshResponse(BaseModel):
     id: str
-    status: str
+    status: LastStatus | Literal["queued"]
     detail: str

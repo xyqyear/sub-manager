@@ -6,10 +6,9 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_dummy.db")
-
-from app.yaml import yaml_load
 
 from app.schemas.configs import (
     DialerOverridePayload,
@@ -41,13 +40,17 @@ from app.services.generator import (
     load_subscriptions,
     merge_into_base_yaml,
 )
+from app.yaml import yaml_load
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_diag() -> GenerationDiagnosticsData:
-    return GenerationDiagnosticsData(stale_subscription_ids=[], stale_rule_ids=[], warnings=[])
+    return GenerationDiagnosticsData(
+        stale_subscription_ids=[], stale_rule_ids=[], warnings=[]
+    )
 
 
 class _FakeSub:
@@ -75,7 +78,8 @@ class _FakeRuleSource:
         self.next_refresh_at: datetime | None = kwargs.get("next_refresh_at")
         self.update_interval_sec: int = kwargs.get("update_interval_sec", 3600)
         self.cached_payload_lines_json: list[str] | None = kwargs.get(
-            "cached_payload_lines_json", [".example.com"],
+            "cached_payload_lines_json",
+            [".example.com"],
         )
 
 
@@ -114,13 +118,16 @@ def _make_ctx(
 
 
 def _simple_pool(proxies: list[dict], source_id: str = "sub-1") -> ProxyPoolResult:
-    sources = [OrderedSource(source_id=source_id, source_name="Sub 1", cached_proxies=proxies)]
+    sources = [
+        OrderedSource(source_id=source_id, source_name="Sub 1", cached_proxies=proxies)
+    ]
     return build_proxy_pool_with_collision_names(sources)
 
 
 # ---------------------------------------------------------------------------
 # load_subscriptions
 # ---------------------------------------------------------------------------
+
 
 class TestLoadSubscriptions:
     @pytest.mark.asyncio
@@ -175,6 +182,7 @@ class TestLoadSubscriptions:
 # check_rule_staleness
 # ---------------------------------------------------------------------------
 
+
 class TestCheckRuleStaleness:
     @pytest.mark.asyncio
     async def test_stale_rule_enqueues_refresh(self):
@@ -183,7 +191,13 @@ class TestCheckRuleStaleness:
             auto_update=True,
             next_refresh_at=datetime.now(UTC) - timedelta(hours=1),
         )
-        binding = RouteBindingPayload(position=1, binding_name="R1", rule_source_id="rule-1", default_group_name="FG", no_resolve=False)
+        binding = RouteBindingPayload(
+            position=1,
+            binding_name="R1",
+            rule_source_id="rule-1",
+            default_group_name="FG",
+            no_resolve=False,
+        )
         diag = _make_diag()
         with patch("app.services.generator.refresh_loop_manager") as mock_mgr:
             mock_mgr.enqueue_rule_refresh = AsyncMock()
@@ -198,7 +212,13 @@ class TestCheckRuleStaleness:
             auto_update=True,
             next_refresh_at=datetime.now(UTC) + timedelta(hours=1),
         )
-        binding = RouteBindingPayload(position=1, binding_name="R1", rule_source_id="rule-1", default_group_name="FG", no_resolve=False)
+        binding = RouteBindingPayload(
+            position=1,
+            binding_name="R1",
+            rule_source_id="rule-1",
+            default_group_name="FG",
+            no_resolve=False,
+        )
         diag = _make_diag()
         with patch("app.services.generator.refresh_loop_manager") as mock_mgr:
             mock_mgr.enqueue_rule_refresh = AsyncMock()
@@ -211,14 +231,26 @@ class TestCheckRuleStaleness:
 # build_filtered_groups
 # ---------------------------------------------------------------------------
 
+
 class TestBuildFilteredGroups:
     def test_happy_path(self):
-        pool = _simple_pool([{"name": "hk-1", "type": "ss"}, {"name": "us-1", "type": "ss"}])
+        pool = _simple_pool(
+            [{"name": "hk-1", "type": "ss"}, {"name": "us-1", "type": "ss"}]
+        )
         source = _make_source_input(
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="HK", position=1, group_mode="select",
-                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern="hk", regex_flags="i", position=1)],
+                    name="HK",
+                    position=1,
+                    group_mode="select",
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="sub-1",
+                            regex_pattern="hk",
+                            regex_flags="i",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
         )
@@ -233,8 +265,17 @@ class TestBuildFilteredGroups:
         source = _make_source_input(
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="HK", position=1, group_mode="select",
-                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern="hk", regex_flags="", position=1)],
+                    name="HK",
+                    position=1,
+                    group_mode="select",
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="sub-1",
+                            regex_pattern="hk",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
         )
@@ -248,8 +289,17 @@ class TestBuildFilteredGroups:
         source = _make_source_input(
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="HK", position=1, group_mode="select",
-                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern="hk-node", regex_flags="i", position=1)],
+                    name="HK",
+                    position=1,
+                    group_mode="select",
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="sub-1",
+                            regex_pattern="hk-node",
+                            regex_flags="i",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
         )
@@ -259,17 +309,37 @@ class TestBuildFilteredGroups:
 
     def test_multiple_sources(self):
         sources = [
-            OrderedSource(source_id="s1", source_name="S1", cached_proxies=[{"name": "a", "type": "ss"}]),
-            OrderedSource(source_id="s2", source_name="S2", cached_proxies=[{"name": "b", "type": "ss"}]),
+            OrderedSource(
+                source_id="s1",
+                source_name="S1",
+                cached_proxies=[{"name": "a", "type": "ss"}],
+            ),
+            OrderedSource(
+                source_id="s2",
+                source_name="S2",
+                cached_proxies=[{"name": "b", "type": "ss"}],
+            ),
         ]
         pool = build_proxy_pool_with_collision_names(sources)
         source = _make_source_input(
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="All", position=1, group_mode="select",
+                    name="All",
+                    position=1,
+                    group_mode="select",
                     rules=[
-                        FilteredGroupRulePayload(subscription_source_id="s1", regex_pattern=".*", regex_flags="", position=1),
-                        FilteredGroupRulePayload(subscription_source_id="s2", regex_pattern=".*", regex_flags="", position=2),
+                        FilteredGroupRulePayload(
+                            subscription_source_id="s1",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=1,
+                        ),
+                        FilteredGroupRulePayload(
+                            subscription_source_id="s2",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=2,
+                        ),
                     ],
                 ),
             ],
@@ -283,8 +353,18 @@ class TestBuildFilteredGroups:
         source = _make_source_input(
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="Relay", position=1, group_mode="select", copy_nodes=True,
-                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern=".*", regex_flags="", position=1)],
+                    name="Relay",
+                    position=1,
+                    group_mode="select",
+                    copy_nodes=True,
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="sub-1",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
         )
@@ -299,15 +379,27 @@ class TestBuildFilteredGroups:
         assert "node-a [Relay]" in pool_names
 
     def test_copy_nodes_name_collision(self):
-        pool = _simple_pool([
-            {"name": "node-a", "type": "ss"},
-            {"name": "node-a [Relay]", "type": "ss"},
-        ])
+        pool = _simple_pool(
+            [
+                {"name": "node-a", "type": "ss"},
+                {"name": "node-a [Relay]", "type": "ss"},
+            ]
+        )
         source = _make_source_input(
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="Relay", position=1, group_mode="select", copy_nodes=True,
-                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern="node-a$", regex_flags="", position=1)],
+                    name="Relay",
+                    position=1,
+                    group_mode="select",
+                    copy_nodes=True,
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="sub-1",
+                            regex_pattern="node-a$",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
         )
@@ -321,6 +413,7 @@ class TestBuildFilteredGroups:
 # ---------------------------------------------------------------------------
 # build_manual_groups
 # ---------------------------------------------------------------------------
+
 
 class TestBuildManualGroups:
     def _ctx_with_fg(self, fg_names: list[str]) -> GenerationContext:
@@ -336,8 +429,14 @@ class TestBuildManualGroups:
         ctx.source = _make_source_input(
             manual_groups=[
                 ManualGroupPayload(
-                    name="MG-A", position=1, group_mode="select",
-                    members=[ManualGroupMemberPayload(member_type="filtered_group", member_ref="FG-A", position=1)],
+                    name="MG-A",
+                    position=1,
+                    group_mode="select",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="filtered_group", member_ref="FG-A", position=1
+                        )
+                    ],
                 ),
             ],
         )
@@ -350,12 +449,24 @@ class TestBuildManualGroups:
         ctx.source = _make_source_input(
             manual_groups=[
                 ManualGroupPayload(
-                    name="Inner", position=1, group_mode="select",
-                    members=[ManualGroupMemberPayload(member_type="filtered_group", member_ref="FG-A", position=1)],
+                    name="Inner",
+                    position=1,
+                    group_mode="select",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="filtered_group", member_ref="FG-A", position=1
+                        )
+                    ],
                 ),
                 ManualGroupPayload(
-                    name="Outer", position=2, group_mode="select",
-                    members=[ManualGroupMemberPayload(member_type="manual_group", member_ref="Inner", position=1)],
+                    name="Outer",
+                    position=2,
+                    group_mode="select",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="manual_group", member_ref="Inner", position=1
+                        )
+                    ],
                 ),
             ],
         )
@@ -368,12 +479,24 @@ class TestBuildManualGroups:
         ctx.source = _make_source_input(
             manual_groups=[
                 ManualGroupPayload(
-                    name="A", position=1, group_mode="select",
-                    members=[ManualGroupMemberPayload(member_type="manual_group", member_ref="B", position=1)],
+                    name="A",
+                    position=1,
+                    group_mode="select",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="manual_group", member_ref="B", position=1
+                        )
+                    ],
                 ),
                 ManualGroupPayload(
-                    name="B", position=2, group_mode="select",
-                    members=[ManualGroupMemberPayload(member_type="manual_group", member_ref="A", position=1)],
+                    name="B",
+                    position=2,
+                    group_mode="select",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="manual_group", member_ref="A", position=1
+                        )
+                    ],
                 ),
             ],
         )
@@ -386,8 +509,14 @@ class TestBuildManualGroups:
         ctx.source = _make_source_input(
             manual_groups=[
                 ManualGroupPayload(
-                    name="MG", position=1, group_mode="select",
-                    members=[ManualGroupMemberPayload(member_type="filtered_group", member_ref="NOPE", position=1)],
+                    name="MG",
+                    position=1,
+                    group_mode="select",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="filtered_group", member_ref="NOPE", position=1
+                        )
+                    ],
                 ),
             ],
         )
@@ -399,7 +528,9 @@ class TestBuildManualGroups:
         ctx = self._ctx_with_fg(["FG-A"])
         ctx.source = _make_source_input(
             manual_groups=[
-                ManualGroupPayload(name="MG", position=1, group_mode="select", members=[]),
+                ManualGroupPayload(
+                    name="MG", position=1, group_mode="select", members=[]
+                ),
             ],
         )
         with pytest.raises(GenerationError) as exc_info:
@@ -411,9 +542,12 @@ class TestBuildManualGroups:
 # apply_dialer_overrides
 # ---------------------------------------------------------------------------
 
+
 class TestApplyDialerOverrides:
     def _ctx_with_pool_and_fg(self) -> GenerationContext:
-        pool = _simple_pool([{"name": "node-a", "type": "ss"}, {"name": "node-b", "type": "ss"}])
+        pool = _simple_pool(
+            [{"name": "node-a", "type": "ss"}, {"name": "node-b", "type": "ss"}]
+        )
         source = _make_source_input(
             dialer_override_rules=[
                 DialerOverridePayload(filtered_group_name="FG", dialer_group_name="FG"),
@@ -437,7 +571,9 @@ class TestApplyDialerOverrides:
         pool = _simple_pool([{"name": "node-a", "type": "ss"}])
         source = _make_source_input(
             dialer_override_rules=[
-                DialerOverridePayload(filtered_group_name="FG", dialer_group_name="NOPE"),
+                DialerOverridePayload(
+                    filtered_group_name="FG", dialer_group_name="NOPE"
+                ),
             ],
         )
         ctx = _make_ctx(source=source, pool_result=pool)
@@ -451,7 +587,9 @@ class TestApplyDialerOverrides:
         pool = _simple_pool([{"name": "node-a", "type": "ss"}])
         source = _make_source_input(
             dialer_override_rules=[
-                DialerOverridePayload(filtered_group_name="NOPE", dialer_group_name="FG"),
+                DialerOverridePayload(
+                    filtered_group_name="NOPE", dialer_group_name="FG"
+                ),
             ],
         )
         ctx = _make_ctx(source=source, pool_result=pool)
@@ -465,8 +603,12 @@ class TestApplyDialerOverrides:
         pool = _simple_pool([{"name": "node-a", "type": "ss"}])
         source = _make_source_input(
             dialer_override_rules=[
-                DialerOverridePayload(filtered_group_name="FG1", dialer_group_name="FG1"),
-                DialerOverridePayload(filtered_group_name="FG2", dialer_group_name="FG2"),
+                DialerOverridePayload(
+                    filtered_group_name="FG1", dialer_group_name="FG1"
+                ),
+                DialerOverridePayload(
+                    filtered_group_name="FG2", dialer_group_name="FG2"
+                ),
             ],
         )
         ctx = _make_ctx(source=source, pool_result=pool)
@@ -482,10 +624,17 @@ class TestApplyDialerOverrides:
 # build_route_groups_and_rules
 # ---------------------------------------------------------------------------
 
+
 class TestBuildRouteGroupsAndRules:
     def _base_ctx(self) -> tuple[GenerationContext, dict, list]:
         bindings = [
-            RouteBindingPayload(position=1, binding_name="Google", rule_source_id="rule-1", default_group_name="FG", no_resolve=False),
+            RouteBindingPayload(
+                position=1,
+                binding_name="Google",
+                rule_source_id="rule-1",
+                default_group_name="FG",
+                no_resolve=False,
+            ),
         ]
         source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
@@ -526,7 +675,13 @@ class TestBuildRouteGroupsAndRules:
 
     def test_no_resolve_flag(self):
         bindings = [
-            RouteBindingPayload(position=1, binding_name="China", rule_source_id="rule-1", default_group_name="DIRECT", no_resolve=True),
+            RouteBindingPayload(
+                position=1,
+                binding_name="China",
+                rule_source_id="rule-1",
+                default_group_name="DIRECT",
+                no_resolve=True,
+            ),
         ]
         source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
@@ -539,8 +694,20 @@ class TestBuildRouteGroupsAndRules:
 
     def test_provider_key_collision(self):
         bindings = [
-            RouteBindingPayload(position=1, binding_name="Google", rule_source_id="r1", default_group_name="DIRECT", no_resolve=False),
-            RouteBindingPayload(position=2, binding_name="Google", rule_source_id="r2", default_group_name="DIRECT", no_resolve=False),
+            RouteBindingPayload(
+                position=1,
+                binding_name="Google",
+                rule_source_id="r1",
+                default_group_name="DIRECT",
+                no_resolve=False,
+            ),
+            RouteBindingPayload(
+                position=2,
+                binding_name="Google",
+                rule_source_id="r2",
+                default_group_name="DIRECT",
+                no_resolve=False,
+            ),
         ]
         source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
@@ -555,7 +722,13 @@ class TestBuildRouteGroupsAndRules:
 
     def test_route_group_member_order(self):
         bindings = [
-            RouteBindingPayload(position=1, binding_name="Route", rule_source_id="rule-1", default_group_name="MG", no_resolve=False),
+            RouteBindingPayload(
+                position=1,
+                binding_name="Route",
+                rule_source_id="rule-1",
+                default_group_name="MG",
+                no_resolve=False,
+            ),
         ]
         source = _make_source_input(config_id="cfg-1")
         ctx = _make_ctx(source=source)
@@ -579,10 +752,13 @@ class TestBuildRouteGroupsAndRules:
 # build_final_match_group
 # ---------------------------------------------------------------------------
 
+
 class TestBuildFinalMatchGroup:
     def test_direct(self):
         source = _make_source_input(final_target_type="DIRECT")
-        ctx = _make_ctx(source=source, group_names_filtered=["FG"], group_names_manual=["MG"])
+        ctx = _make_ctx(
+            source=source, group_names_filtered=["FG"], group_names_manual=["MG"]
+        )
         ctx.available_non_route_groups = {"FG", "MG"}
         result = build_final_match_group(ctx)
         assert result == "Final"
@@ -603,7 +779,9 @@ class TestBuildFinalMatchGroup:
         assert ctx.route_groups[0].proxies[0] == "REJECT"
 
     def test_valid_group(self):
-        source = _make_source_input(final_target_type="group", final_target_group_name="FG")
+        source = _make_source_input(
+            final_target_type="group", final_target_group_name="FG"
+        )
         ctx = _make_ctx(source=source, group_names_filtered=["FG"])
         ctx.available_non_route_groups = {"FG"}
         result = build_final_match_group(ctx)
@@ -611,14 +789,18 @@ class TestBuildFinalMatchGroup:
         assert ctx.route_groups[0].proxies[0] == "FG"
 
     def test_group_missing_name(self):
-        source = _make_source_input(final_target_type="group", final_target_group_name=None)
+        source = _make_source_input(
+            final_target_type="group", final_target_group_name=None
+        )
         ctx = _make_ctx(source=source)
         with pytest.raises(GenerationError) as exc_info:
             build_final_match_group(ctx)
         assert exc_info.value.status_code == 422
 
     def test_group_unknown_name(self):
-        source = _make_source_input(final_target_type="group", final_target_group_name="NOPE")
+        source = _make_source_input(
+            final_target_type="group", final_target_group_name="NOPE"
+        )
         ctx = _make_ctx(source=source, group_names_filtered=["FG"])
         ctx.available_non_route_groups = {"FG"}
         with pytest.raises(GenerationError) as exc_info:
@@ -626,16 +808,14 @@ class TestBuildFinalMatchGroup:
         assert exc_info.value.status_code == 422
 
     def test_invalid_type(self):
-        source = _make_source_input(final_target_type="INVALID")
-        ctx = _make_ctx(source=source)
-        with pytest.raises(GenerationError) as exc_info:
-            build_final_match_group(ctx)
-        assert exc_info.value.status_code == 422
+        with pytest.raises(ValidationError):
+            _make_source_input(final_target_type="INVALID")
 
 
 # ---------------------------------------------------------------------------
 # filter_and_clean_proxies
 # ---------------------------------------------------------------------------
+
 
 class TestFilterAndCleanProxies:
     def test_strips_internal_keys(self):
@@ -646,10 +826,12 @@ class TestFilterAndCleanProxies:
         assert not any(k.startswith("__") for k in result[0])
 
     def test_only_referenced_proxies(self):
-        pool = _simple_pool([
-            {"name": "node-a", "type": "ss"},
-            {"name": "node-b", "type": "ss"},
-        ])
+        pool = _simple_pool(
+            [
+                {"name": "node-a", "type": "ss"},
+                {"name": "node-b", "type": "ss"},
+            ]
+        )
         groups = [ProxyGroupObj(name="G", type="select", proxies=["node-a"])]
         result = filter_and_clean_proxies(pool, groups)
         assert len(result) == 1
@@ -657,7 +839,11 @@ class TestFilterAndCleanProxies:
 
     def test_direct_reject_not_treated_as_proxy(self):
         pool = _simple_pool([{"name": "node-a", "type": "ss"}])
-        groups = [ProxyGroupObj(name="G", type="select", proxies=["node-a", "DIRECT", "REJECT"])]
+        groups = [
+            ProxyGroupObj(
+                name="G", type="select", proxies=["node-a", "DIRECT", "REJECT"]
+            )
+        ]
         result = filter_and_clean_proxies(pool, groups)
         assert len(result) == 1
         assert result[0]["name"] == "node-a"
@@ -666,6 +852,7 @@ class TestFilterAndCleanProxies:
 # ---------------------------------------------------------------------------
 # merge_into_base_yaml
 # ---------------------------------------------------------------------------
+
 
 class TestMergeIntoBaseYaml:
     def test_valid_merge(self):
@@ -704,34 +891,67 @@ class TestMergeIntoBaseYaml:
 # Integration: _generate_from_loaded_data
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateFromLoadedData:
     def test_full_pipeline(self):
         ordered_sources = [
-            OrderedSource(source_id="s1", source_name="Sub1", cached_proxies=[
-                {"name": "node-a", "type": "socks5", "server": "1.1.1.1", "port": 1080},
-            ]),
+            OrderedSource(
+                source_id="s1",
+                source_name="Sub1",
+                cached_proxies=[
+                    {
+                        "name": "node-a",
+                        "type": "socks5",
+                        "server": "1.1.1.1",
+                        "port": 1080,
+                    },
+                ],
+            ),
         ]
         rule = _make_rule_source(id="r1")
         resolved_bindings = [
-            RouteBindingPayload(position=1, binding_name="Route", rule_source_id="r1", default_group_name="FG", no_resolve=False),
+            RouteBindingPayload(
+                position=1,
+                binding_name="Route",
+                rule_source_id="r1",
+                default_group_name="FG",
+                no_resolve=False,
+            ),
         ]
         source = _make_source_input(
             config_id="cfg-1",
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="FG", position=1, group_mode="select",
-                    rules=[FilteredGroupRulePayload(subscription_source_id="s1", regex_pattern=".*", regex_flags="", position=1)],
+                    name="FG",
+                    position=1,
+                    group_mode="select",
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="s1",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
             manual_groups=[
                 ManualGroupPayload(
-                    name="MG", position=1, group_mode="select",
-                    members=[ManualGroupMemberPayload(member_type="filtered_group", member_ref="FG", position=1)],
+                    name="MG",
+                    position=1,
+                    group_mode="select",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="filtered_group", member_ref="FG", position=1
+                        )
+                    ],
                 ),
             ],
         )
         diag = _make_diag()
-        result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule}, resolved_bindings)
+        result = _generate_from_loaded_data(
+            source, diag, ordered_sources, {"r1": rule}, resolved_bindings
+        )
         assert isinstance(result, GenerationResult)
         parsed = yaml_load(result.yaml)
         assert "proxies" in parsed
@@ -742,32 +962,71 @@ class TestGenerateFromLoadedData:
 
     def test_copy_nodes_with_dialer_override(self):
         ordered_sources = [
-            OrderedSource(source_id="s1", source_name="Sub1", cached_proxies=[
-                {"name": "shared", "type": "socks5", "server": "1.1.1.1", "port": 1080},
-            ]),
+            OrderedSource(
+                source_id="s1",
+                source_name="Sub1",
+                cached_proxies=[
+                    {
+                        "name": "shared",
+                        "type": "socks5",
+                        "server": "1.1.1.1",
+                        "port": 1080,
+                    },
+                ],
+            ),
         ]
         rule = _make_rule_source(id="r1")
         resolved_bindings = [
-            RouteBindingPayload(position=1, binding_name="Route", rule_source_id="r1", default_group_name="Direct", no_resolve=False),
+            RouteBindingPayload(
+                position=1,
+                binding_name="Route",
+                rule_source_id="r1",
+                default_group_name="Direct",
+                no_resolve=False,
+            ),
         ]
         source = _make_source_input(
             config_id="cfg-1",
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="Direct", position=1, group_mode="select", copy_nodes=False,
-                    rules=[FilteredGroupRulePayload(subscription_source_id="s1", regex_pattern=".*", regex_flags="", position=1)],
+                    name="Direct",
+                    position=1,
+                    group_mode="select",
+                    copy_nodes=False,
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="s1",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
                 FilteredGroupPayload(
-                    name="Relay", position=2, group_mode="select", copy_nodes=True,
-                    rules=[FilteredGroupRulePayload(subscription_source_id="s1", regex_pattern=".*", regex_flags="", position=1)],
+                    name="Relay",
+                    position=2,
+                    group_mode="select",
+                    copy_nodes=True,
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="s1",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
             dialer_override_rules=[
-                DialerOverridePayload(filtered_group_name="Relay", dialer_group_name="Direct"),
+                DialerOverridePayload(
+                    filtered_group_name="Relay", dialer_group_name="Direct"
+                ),
             ],
         )
         diag = _make_diag()
-        result = _generate_from_loaded_data(source, diag, ordered_sources, {"r1": rule}, resolved_bindings)
+        result = _generate_from_loaded_data(
+            source, diag, ordered_sources, {"r1": rule}, resolved_bindings
+        )
         parsed = yaml_load(result.yaml)
         proxy_map = {p["name"]: p for p in parsed["proxies"]}
         assert "shared" in proxy_map
@@ -779,6 +1038,7 @@ class TestGenerateFromLoadedData:
 # ---------------------------------------------------------------------------
 # _is_stale: naive vs aware datetime regression
 # ---------------------------------------------------------------------------
+
 
 class TestIsStale:
     def test_none_is_not_stale(self):
@@ -803,6 +1063,7 @@ class TestIsStale:
 # Config-level test_url / test_interval_sec propagation
 # ---------------------------------------------------------------------------
 
+
 class TestConfigLevelTestUrlPropagation:
     def test_filtered_groups_use_config_level_values(self):
         pool = _simple_pool([{"name": "hk-1", "type": "ss"}])
@@ -811,8 +1072,17 @@ class TestConfigLevelTestUrlPropagation:
             test_interval_sec=120,
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="HK", position=1, group_mode="url-test",
-                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern=".*", regex_flags="", position=1)],
+                    name="HK",
+                    position=1,
+                    group_mode="url-test",
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="sub-1",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
         )
@@ -827,8 +1097,14 @@ class TestConfigLevelTestUrlPropagation:
             test_interval_sec=60,
             manual_groups=[
                 ManualGroupPayload(
-                    name="MG", position=1, group_mode="fallback",
-                    members=[ManualGroupMemberPayload(member_type="filtered_group", member_ref="FG", position=1)],
+                    name="MG",
+                    position=1,
+                    group_mode="fallback",
+                    members=[
+                        ManualGroupMemberPayload(
+                            member_type="filtered_group", member_ref="FG", position=1
+                        )
+                    ],
                 ),
             ],
         )
@@ -844,13 +1120,23 @@ class TestConfigLevelTestUrlPropagation:
         source = _make_source_input(
             filtered_groups=[
                 FilteredGroupPayload(
-                    name="FG", position=1, group_mode="url-test",
-                    rules=[FilteredGroupRulePayload(subscription_source_id="sub-1", regex_pattern=".*", regex_flags="", position=1)],
+                    name="FG",
+                    position=1,
+                    group_mode="url-test",
+                    rules=[
+                        FilteredGroupRulePayload(
+                            subscription_source_id="sub-1",
+                            regex_pattern=".*",
+                            regex_flags="",
+                            position=1,
+                        )
+                    ],
                 ),
             ],
         )
         ctx = _make_ctx(source=source, pool_result=pool)
         build_filtered_groups(ctx)
         from app.config import settings
+
         assert ctx.filtered_groups[0].url == settings.default_test_url
         assert ctx.filtered_groups[0].interval == settings.default_test_interval

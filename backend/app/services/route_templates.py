@@ -14,7 +14,9 @@ from app.schemas.route_templates import (
 from app.services.common import ServiceError
 
 
-async def _assert_unique_template_name(db: AsyncSession, name: str, exclude_id: str | None = None) -> None:
+async def _assert_unique_template_name(
+    db: AsyncSession, name: str, exclude_id: str | None = None
+) -> None:
     query = select(RouteTemplate).where(RouteTemplate.name == name)
     if exclude_id:
         query = query.where(RouteTemplate.id != exclude_id)
@@ -61,13 +63,17 @@ async def validate_template_refs(
         raise ServiceError(f"unknown rule_source_id: {sorted(missing)}", 422)
 
 
-async def create_route_template(db: AsyncSession, payload: RouteTemplateCreate) -> RouteTemplate:
+async def create_route_template(
+    db: AsyncSession, payload: RouteTemplateCreate
+) -> RouteTemplate:
     await _assert_unique_template_name(db, payload.name)
     if payload.slots or payload.bindings:
         validate_template_shapes(payload.slots, payload.bindings)
         await validate_template_refs(db, payload.bindings)
 
-    max_pos = (await db.execute(select(func.coalesce(func.max(RouteTemplate.position), -1)))).scalar()
+    max_pos = (
+        await db.execute(select(func.coalesce(func.max(RouteTemplate.position), -1)))
+    ).scalar_one()
 
     template = RouteTemplate(
         name=payload.name,
@@ -82,7 +88,9 @@ async def create_route_template(db: AsyncSession, payload: RouteTemplateCreate) 
 
 
 async def update_route_template(
-    db: AsyncSession, template: RouteTemplate, payload: RouteTemplateUpdate,
+    db: AsyncSession,
+    template: RouteTemplate,
+    payload: RouteTemplateUpdate,
 ) -> RouteTemplate:
     if payload.name is not None and payload.name != template.name:
         await _assert_unique_template_name(db, payload.name, exclude_id=template.id)
@@ -104,11 +112,17 @@ async def update_route_template(
 
 
 async def list_route_templates(db: AsyncSession) -> list[RouteTemplate]:
-    result = await db.scalars(select(RouteTemplate).order_by(RouteTemplate.position.asc(), RouteTemplate.created_at.desc()))
+    result = await db.scalars(
+        select(RouteTemplate).order_by(
+            RouteTemplate.position.asc(), RouteTemplate.created_at.desc()
+        )
+    )
     return list(result.all())
 
 
-async def get_route_template_or_404(db: AsyncSession, template_id: str) -> RouteTemplate:
+async def get_route_template_or_404(
+    db: AsyncSession, template_id: str
+) -> RouteTemplate:
     template = await db.get(RouteTemplate, template_id)
     if template is None:
         raise ServiceError("route template not found", 404)
@@ -117,7 +131,9 @@ async def get_route_template_or_404(db: AsyncSession, template_id: str) -> Route
 
 async def delete_route_template(db: AsyncSession, template: RouteTemplate) -> None:
     result = await db.scalars(
-        select(MainConfig.id).where(MainConfig.route_template_id == template.id).limit(1)
+        select(MainConfig.id)
+        .where(MainConfig.route_template_id == template.id)
+        .limit(1)
     )
     if result.first():
         raise ServiceError("route template is referenced by a main config", 409)

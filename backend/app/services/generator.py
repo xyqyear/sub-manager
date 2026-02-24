@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import re
-from typing import Any
+from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from app.models import (
     RuleSource,
     SubscriptionSource,
 )
+from app.schemas.common import FinalTargetType, GroupMode, RuleBehavior
 from app.schemas.configs import (
     DialerOverridePayload,
     DraftPreviewRequest,
@@ -24,7 +26,12 @@ from app.schemas.configs import (
     RouteBindingPayload,
     SlotMappingPayload,
 )
-from app.services.common import GenerationError, dedupe_keep_order, slugify_name, utc_now
+from app.services.common import (
+    GenerationError,
+    dedupe_keep_order,
+    slugify_name,
+    utc_now,
+)
 from app.services.refresh_loop import refresh_loop_manager
 from app.yaml import YAMLError, yaml_dump, yaml_load
 
@@ -40,7 +47,7 @@ class GenerationInput(BaseModel):
 
     config_id: str | None = None
     base_config_yaml: str
-    final_target_type: str
+    final_target_type: FinalTargetType
     final_target_group_name: str | None = None
     public_base_url: str = ""
     filtered_groups: list[FilteredGroupPayload] = []
@@ -52,7 +59,9 @@ class GenerationInput(BaseModel):
     test_interval_sec: int | None = None
 
     @staticmethod
-    def from_main_config(config: MainConfig, *, public_base_url: str) -> GenerationInput:
+    def from_main_config(
+        config: MainConfig, *, public_base_url: str
+    ) -> GenerationInput:
         return GenerationInput(
             config_id=config.id,
             base_config_yaml=config.base_config_yaml,
@@ -69,7 +78,9 @@ class GenerationInput(BaseModel):
         )
 
     @staticmethod
-    def from_draft(draft: DraftPreviewRequest, *, public_base_url: str) -> GenerationInput:
+    def from_draft(
+        draft: DraftPreviewRequest, *, public_base_url: str
+    ) -> GenerationInput:
         return GenerationInput(
             config_id=draft.config_id,
             base_config_yaml=draft.base_config_yaml,
@@ -111,16 +122,16 @@ class GenerationResult(BaseModel):
 
 class ProxyGroupObj(BaseModel):
     name: str
-    type: str
+    type: GroupMode
     proxies: list[str]
     url: str | None = None
     interval: int | None = None
 
 
 class RuleProviderObj(BaseModel):
-    type: str
-    behavior: str
-    format: str
+    type: Literal["http"]
+    behavior: RuleBehavior
+    format: Literal["yaml"]
     path: str
     url: str
     interval: int
@@ -146,6 +157,7 @@ class GenerationContext:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _is_stale(next_refresh_at: datetime | None) -> bool:
     if next_refresh_at is None:
         return False
@@ -156,7 +168,7 @@ def _is_stale(next_refresh_at: datetime | None) -> bool:
 
 def _build_group_obj(
     name: str,
-    group_mode: str,
+    group_mode: GroupMode,
     proxies: list[str],
     test_url: str | None,
     test_interval_sec: int | None,
@@ -171,6 +183,7 @@ def _build_group_obj(
 # ---------------------------------------------------------------------------
 # Step 3 (unchanged): build_proxy_pool_with_collision_names
 # ---------------------------------------------------------------------------
+
 
 def build_proxy_pool_with_collision_names(
     ordered_sources: list[OrderedSource],
@@ -246,6 +259,7 @@ def match_filtered_rules_on_proxies(
 # Step 1: load_subscriptions (async — enqueues stale refreshes)
 # ---------------------------------------------------------------------------
 
+
 async def load_subscriptions(
     sub_ids_ordered: list[str],
     sub_map: dict[str, SubscriptionSource],
@@ -264,9 +278,15 @@ async def load_subscriptions(
             diagnostics.stale_subscription_ids.append(sub.id)
             await refresh_loop_manager.enqueue_subscription_refresh(sub.id)
         if not sub.cached_proxies_json:
-            raise GenerationError(f"subscription has no cached proxies: {sub.name}", 409)
+            raise GenerationError(
+                f"subscription has no cached proxies: {sub.name}", 409
+            )
         ordered_sources.append(
-            OrderedSource(source_id=sub.id, source_name=sub.name, cached_proxies=sub.cached_proxies_json)
+            OrderedSource(
+                source_id=sub.id,
+                source_name=sub.name,
+                cached_proxies=sub.cached_proxies_json,
+            )
         )
     return ordered_sources
 
@@ -274,6 +294,7 @@ async def load_subscriptions(
 # ---------------------------------------------------------------------------
 # Step 2: check_rule_staleness (async — enqueues stale refreshes)
 # ---------------------------------------------------------------------------
+
 
 async def check_rule_staleness(
     rule_map: dict[str, RuleSource],
@@ -284,7 +305,11 @@ async def check_rule_staleness(
         rule_source = rule_map.get(binding.rule_source_id)
         if rule_source is None:
             continue
-        if rule_source.mode == "remote" and rule_source.auto_update and _is_stale(rule_source.next_refresh_at):
+        if (
+            rule_source.mode == "remote"
+            and rule_source.auto_update
+            and _is_stale(rule_source.next_refresh_at)
+        ):
             if rule_source.id not in diagnostics.stale_rule_ids:
                 diagnostics.stale_rule_ids.append(rule_source.id)
                 await refresh_loop_manager.enqueue_rule_refresh(rule_source.id)
@@ -293,6 +318,7 @@ async def check_rule_staleness(
 # ---------------------------------------------------------------------------
 # Step 4: build_filtered_groups (pure)
 # ---------------------------------------------------------------------------
+
 
 def build_filtered_groups(ctx: GenerationContext) -> None:
     assert ctx.pool_result is not None
@@ -307,14 +333,20 @@ def build_filtered_groups(ctx: GenerationContext) -> None:
             )
             for r in sorted(fg.rules, key=lambda r: r.position)
         ]
-        members = match_filtered_rules_on_proxies(fg_match_rules, ctx.pool_result.proxies_by_source)
+        members = match_filtered_rules_on_proxies(
+            fg_match_rules, ctx.pool_result.proxies_by_source
+        )
         if not members:
-            raise GenerationError(f"filtered group has no matched proxies: {fg.name}", 422)
+            raise GenerationError(
+                f"filtered group has no matched proxies: {fg.name}", 422
+            )
 
         if fg.copy_nodes:
             used_names = {str(p.get("name", "")) for p in ctx.pool_result.proxy_pool}
             copy_members: list[str] = []
-            proxy_by_name_snapshot = {str(p.get("name", "")): p for p in ctx.pool_result.proxy_pool}
+            proxy_by_name_snapshot = {
+                str(p.get("name", "")): p for p in ctx.pool_result.proxy_pool
+            }
             for original_name in members:
                 original = proxy_by_name_snapshot.get(original_name)
                 if original is None:
@@ -335,7 +367,13 @@ def build_filtered_groups(ctx: GenerationContext) -> None:
 
         ctx.filtered_group_members[fg.name] = members
         ctx.filtered_groups.append(
-            _build_group_obj(fg.name, fg.group_mode, members, ctx.source.test_url, ctx.source.test_interval_sec)
+            _build_group_obj(
+                fg.name,
+                fg.group_mode,
+                members,
+                ctx.source.test_url,
+                ctx.source.test_interval_sec,
+            )
         )
 
     ctx.group_names_filtered = [fg.name for fg in sorted_fg]
@@ -344,6 +382,7 @@ def build_filtered_groups(ctx: GenerationContext) -> None:
 # ---------------------------------------------------------------------------
 # Step 5: build_manual_groups (pure)
 # ---------------------------------------------------------------------------
+
 
 def build_manual_groups(ctx: GenerationContext) -> None:
     sorted_mg = sorted(ctx.source.manual_groups, key=lambda g: g.position)
@@ -365,14 +404,17 @@ def build_manual_groups(ctx: GenerationContext) -> None:
             if member.member_type == "filtered_group":
                 if member.member_ref not in ctx.filtered_group_members:
                     raise GenerationError(
-                        f"manual group {name} references unknown filtered group {member.member_ref}", 422
+                        f"manual group {name} references unknown filtered group {member.member_ref}",
+                        422,
                     )
                 members.append(member.member_ref)
             elif member.member_type == "manual_group":
                 _ = resolve_manual_group(member.member_ref)
                 members.append(member.member_ref)
             else:
-                raise GenerationError(f"invalid manual group member type: {member.member_type}", 422)
+                raise GenerationError(
+                    f"invalid manual group member type: {member.member_type}", 422
+                )
         members = dedupe_keep_order(members)
         if not members:
             raise GenerationError(f"manual group has no members: {name}", 422)
@@ -383,16 +425,25 @@ def build_manual_groups(ctx: GenerationContext) -> None:
     for mg in sorted_mg:
         members = resolve_manual_group(mg.name)
         ctx.manual_groups.append(
-            _build_group_obj(mg.name, mg.group_mode, members, ctx.source.test_url, ctx.source.test_interval_sec)
+            _build_group_obj(
+                mg.name,
+                mg.group_mode,
+                members,
+                ctx.source.test_url,
+                ctx.source.test_interval_sec,
+            )
         )
 
     ctx.group_names_manual = [mg.name for mg in sorted_mg]
-    ctx.available_non_route_groups = set(ctx.group_names_filtered + ctx.group_names_manual)
+    ctx.available_non_route_groups = set(
+        ctx.group_names_filtered + ctx.group_names_manual
+    )
 
 
 # ---------------------------------------------------------------------------
 # Step 6: apply_dialer_overrides (pure)
 # ---------------------------------------------------------------------------
+
 
 def apply_dialer_overrides(ctx: GenerationContext) -> None:
     assert ctx.pool_result is not None
@@ -401,10 +452,13 @@ def apply_dialer_overrides(ctx: GenerationContext) -> None:
 
     for rule in ctx.source.dialer_override_rules:
         if rule.dialer_group_name not in ctx.available_non_route_groups:
-            raise GenerationError(f"dialer group not found: {rule.dialer_group_name}", 422)
+            raise GenerationError(
+                f"dialer group not found: {rule.dialer_group_name}", 422
+            )
         if rule.filtered_group_name not in ctx.filtered_group_members:
             raise GenerationError(
-                f"dialer references unknown filtered group: {rule.filtered_group_name}", 422
+                f"dialer references unknown filtered group: {rule.filtered_group_name}",
+                422,
             )
         for proxy_name in ctx.filtered_group_members[rule.filtered_group_name]:
             if proxy_name not in matched_dialer_proxy_names:
@@ -418,18 +472,34 @@ def apply_dialer_overrides(ctx: GenerationContext) -> None:
 # Step 7: build_route_groups_and_rules (pure)
 # ---------------------------------------------------------------------------
 
-def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, RuleSource], resolved_bindings: list[RouteBindingPayload]) -> None:
+
+def build_route_groups_and_rules(
+    ctx: GenerationContext,
+    rule_map: dict[str, RuleSource],
+    resolved_bindings: list[RouteBindingPayload],
+) -> None:
     provider_keys_used: set[str] = set()
 
-    for idx, binding in enumerate(sorted(resolved_bindings, key=lambda s: s.position), start=1):
-        if binding.default_group_name not in ctx.available_non_route_groups | {"DIRECT", "REJECT"}:
-            raise GenerationError(f"route default group not found: {binding.default_group_name}", 422)
+    for idx, binding in enumerate(
+        sorted(resolved_bindings, key=lambda s: s.position), start=1
+    ):
+        if binding.default_group_name not in ctx.available_non_route_groups | {
+            "DIRECT",
+            "REJECT",
+        }:
+            raise GenerationError(
+                f"route default group not found: {binding.default_group_name}", 422
+            )
 
         rule_source = rule_map.get(binding.rule_source_id)
         if rule_source is None:
-            raise GenerationError(f"rule source not found for binding {binding.binding_name}", 422)
+            raise GenerationError(
+                f"rule source not found for binding {binding.binding_name}", 422
+            )
         if not rule_source.enabled:
-            raise GenerationError(f"rule source disabled for binding {binding.binding_name}", 422)
+            raise GenerationError(
+                f"rule source disabled for binding {binding.binding_name}", 422
+            )
         if not rule_source.cached_payload_lines_json:
             raise GenerationError(f"rule source has no cache: {rule_source.name}", 409)
 
@@ -440,7 +510,9 @@ def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, Rul
             + ["REJECT"]
         )
         ctx.route_groups.append(
-            ProxyGroupObj(name=binding.binding_name, type="select", proxies=route_group_members)
+            ProxyGroupObj(
+                name=binding.binding_name, type="select", proxies=route_group_members
+            )
         )
 
         key_base = slugify_name(binding.binding_name).replace("-", "_")
@@ -475,13 +547,16 @@ def build_route_groups_and_rules(ctx: GenerationContext, rule_map: dict[str, Rul
 # Step 8: build_final_match_group (pure)
 # ---------------------------------------------------------------------------
 
+
 def build_final_match_group(ctx: GenerationContext) -> str:
     source = ctx.source
     if source.final_target_type == "group":
         if not source.final_target_group_name:
             raise GenerationError("final target group is required", 422)
         if source.final_target_group_name not in ctx.available_non_route_groups:
-            raise GenerationError(f"final target group not found: {source.final_target_group_name}", 422)
+            raise GenerationError(
+                f"final target group not found: {source.final_target_group_name}", 422
+            )
         default_target = source.final_target_group_name
     elif source.final_target_type in {"DIRECT", "REJECT"}:
         default_target = source.final_target_type
@@ -495,15 +570,14 @@ def build_final_match_group(ctx: GenerationContext) -> str:
         + ctx.group_names_filtered
         + ["REJECT"]
     )
-    ctx.route_groups.append(
-        ProxyGroupObj(name=label, type="select", proxies=members)
-    )
+    ctx.route_groups.append(ProxyGroupObj(name=label, type="select", proxies=members))
     return label
 
 
 # ---------------------------------------------------------------------------
 # Step 9: filter_and_clean_proxies (pure)
 # ---------------------------------------------------------------------------
+
 
 def filter_and_clean_proxies(
     pool_result: ProxyPoolResult,
@@ -529,6 +603,7 @@ def filter_and_clean_proxies(
 # ---------------------------------------------------------------------------
 # Step 10: merge_into_base_yaml (pure)
 # ---------------------------------------------------------------------------
+
 
 def merge_into_base_yaml(
     base_config_yaml: str,
@@ -559,6 +634,7 @@ def merge_into_base_yaml(
 # Orchestrator: _generate_from_loaded_data (pure, sync)
 # ---------------------------------------------------------------------------
 
+
 def _generate_from_loaded_data(
     source: GenerationInput,
     diagnostics: GenerationDiagnosticsData,
@@ -579,7 +655,11 @@ def _generate_from_loaded_data(
     proxy_group_dicts = [g.model_dump(exclude_none=True) for g in all_groups]
     rule_provider_dicts = {k: v.model_dump() for k, v in ctx.rule_providers.items()}
     rendered = merge_into_base_yaml(
-        source.base_config_yaml, final_proxies, proxy_group_dicts, rule_provider_dicts, ctx.rules,
+        source.base_config_yaml,
+        final_proxies,
+        proxy_group_dicts,
+        rule_provider_dicts,
+        ctx.rules,
     )
     return GenerationResult(yaml=rendered, diagnostics=diagnostics)
 
@@ -587,6 +667,7 @@ def _generate_from_loaded_data(
 # ---------------------------------------------------------------------------
 # Slot resolution: template + mappings -> RouteBindingPayload list
 # ---------------------------------------------------------------------------
+
 
 async def resolve_route_bindings(
     db: AsyncSession,
@@ -628,6 +709,7 @@ async def resolve_route_bindings(
 # DB fetch helpers (async)
 # ---------------------------------------------------------------------------
 
+
 async def _fetch_subscriptions(
     db: AsyncSession,
     filtered_groups: list[FilteredGroupPayload],
@@ -665,6 +747,7 @@ async def _fetch_rule_sources(
 # Public entry point (async)
 # ---------------------------------------------------------------------------
 
+
 async def generate_config_yaml(
     db: AsyncSession,
     source: GenerationInput,
@@ -675,18 +758,24 @@ async def generate_config_yaml(
         warnings=[],
     )
     resolved_bindings = await resolve_route_bindings(
-        db, source.route_template_id, source.slot_mappings,
+        db,
+        source.route_template_id,
+        source.slot_mappings,
     )
     sub_ids_ordered, sub_map = await _fetch_subscriptions(db, source.filtered_groups)
     rule_map = await _fetch_rule_sources(db, resolved_bindings)
     ordered_sources = await load_subscriptions(sub_ids_ordered, sub_map, diagnostics)
     await check_rule_staleness(rule_map, resolved_bindings, diagnostics)
-    return _generate_from_loaded_data(source, diagnostics, ordered_sources, rule_map, resolved_bindings)
+    return _generate_from_loaded_data(
+        source, diagnostics, ordered_sources, rule_map, resolved_bindings
+    )
 
 
 async def render_rule_source_yaml(rule_source: RuleSource) -> str:
     if not rule_source.cached_payload_lines_json:
-        raise GenerationError(f"rule source has no cached payload: {rule_source.name}", 409)
+        raise GenerationError(
+            f"rule source has no cached payload: {rule_source.name}", 409
+        )
 
     content = {"payload": rule_source.cached_payload_lines_json}
     return yaml_dump(content)

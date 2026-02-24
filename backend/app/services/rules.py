@@ -9,14 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import RuleSource
+from app.schemas.common import RuleBehavior
 from app.schemas.reorder import ReorderRequest
-from app.schemas.rules import RuleBehavior, RuleCreate, RuleUpdate
+from app.schemas.rules import RuleCreate, RuleUpdate
 from app.services.common import ServiceError, next_refresh_time, utc_now
 from app.yaml import YAMLError, yaml_load
 
 
 def _normalize_interval(interval_sec: int) -> int:
-    return max(settings.min_refresh_interval_sec, min(settings.max_refresh_interval_sec, interval_sec))
+    return max(
+        settings.min_refresh_interval_sec,
+        min(settings.max_refresh_interval_sec, interval_sec),
+    )
 
 
 def validate_rule_payload_lines(behavior: RuleBehavior, lines: list[str]) -> list[str]:
@@ -34,7 +38,7 @@ def validate_rule_payload_lines(behavior: RuleBehavior, lines: list[str]) -> lis
     return normalized
 
 
-def _parse_rule_payload_from_yaml(content: str, behavior: str) -> list[str]:
+def _parse_rule_payload_from_yaml(content: str, behavior: RuleBehavior) -> list[str]:
     try:
         parsed = yaml_load(content)
     except YAMLError as exc:
@@ -57,7 +61,9 @@ def _parse_rule_payload_from_yaml(content: str, behavior: str) -> list[str]:
     return validate_rule_payload_lines(behavior, lines)
 
 
-async def _assert_unique_name(db: AsyncSession, name: str, exclude_id: str | None = None) -> None:
+async def _assert_unique_name(
+    db: AsyncSession, name: str, exclude_id: str | None = None
+) -> None:
     query = select(RuleSource).where(RuleSource.name == name)
     if exclude_id:
         query = query.where(RuleSource.id != exclude_id)
@@ -70,7 +76,9 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
     await _assert_unique_name(db, payload.name)
 
     interval = _normalize_interval(payload.update_interval_sec)
-    max_pos = (await db.execute(select(func.coalesce(func.max(RuleSource.position), -1)))).scalar()
+    max_pos = (
+        await db.execute(select(func.coalesce(func.max(RuleSource.position), -1)))
+    ).scalar_one()
     source = RuleSource(
         name=payload.name,
         mode=payload.mode,
@@ -85,7 +93,9 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
     if payload.mode == "remote":
         if not payload.remote_url:
             raise ServiceError("remote mode requires remote_url", 422)
-        source.next_refresh_at = next_refresh_time(interval) if payload.auto_update else None
+        source.next_refresh_at = (
+            next_refresh_time(interval) if payload.auto_update else None
+        )
     else:
         if payload.payload_lines is None:
             raise ServiceError("manual mode requires payload_lines", 422)
@@ -104,7 +114,9 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
     return source
 
 
-async def update_rule(db: AsyncSession, source: RuleSource, payload: RuleUpdate) -> RuleSource:
+async def update_rule(
+    db: AsyncSession, source: RuleSource, payload: RuleUpdate
+) -> RuleSource:
     if payload.name is not None and payload.name != source.name:
         await _assert_unique_name(db, payload.name, exclude_id=source.id)
         source.name = payload.name
@@ -129,9 +141,13 @@ async def update_rule(db: AsyncSession, source: RuleSource, payload: RuleUpdate)
         if payload.auto_update is not None:
             source.auto_update = payload.auto_update
         if payload.update_interval_sec is not None:
-            source.update_interval_sec = _normalize_interval(payload.update_interval_sec)
+            source.update_interval_sec = _normalize_interval(
+                payload.update_interval_sec
+            )
         source.next_refresh_at = (
-            next_refresh_time(source.update_interval_sec) if source.auto_update else None
+            next_refresh_time(source.update_interval_sec)
+            if source.auto_update
+            else None
         )
     else:
         if mode_changed and payload.payload_lines is None:
@@ -175,7 +191,9 @@ async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSourc
             response = await client.get(source.remote_url)
 
         if response.status_code < 200 or response.status_code >= 300:
-            raise ServiceError(f"rule request failed with status {response.status_code}", 502)
+            raise ServiceError(
+                f"rule request failed with status {response.status_code}", 502
+            )
 
         payload_lines = _parse_rule_payload_from_yaml(response.text, source.behavior)
 
@@ -184,14 +202,18 @@ async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSourc
         source.last_error = None
         source.last_refresh_at = utc_now()
         source.next_refresh_at = (
-            next_refresh_time(source.update_interval_sec) if source.auto_update else None
+            next_refresh_time(source.update_interval_sec)
+            if source.auto_update
+            else None
         )
 
     except ServiceError as exc:
         source.last_status = "error"
         source.last_error = exc.message
         source.next_refresh_at = (
-            next_refresh_time(source.update_interval_sec) if source.auto_update else None
+            next_refresh_time(source.update_interval_sec)
+            if source.auto_update
+            else None
         )
         db.add(source)
         await db.commit()
@@ -201,12 +223,14 @@ async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSourc
         source.last_status = "error"
         source.last_error = f"rule refresh failed: {exc}"
         source.next_refresh_at = (
-            next_refresh_time(source.update_interval_sec) if source.auto_update else None
+            next_refresh_time(source.update_interval_sec)
+            if source.auto_update
+            else None
         )
         db.add(source)
         await db.commit()
         await db.refresh(source)
-        raise ServiceError(source.last_error, 502) from exc
+        raise ServiceError(source.last_error or "", 502) from exc
 
     db.add(source)
     await db.commit()
@@ -222,21 +246,39 @@ async def get_rule_or_404(db: AsyncSession, rule_id: str) -> RuleSource:
 
 
 async def list_rules(db: AsyncSession) -> list[RuleSource]:
-    result = await db.scalars(select(RuleSource).order_by(RuleSource.position.asc(), RuleSource.created_at.desc()))
+    result = await db.scalars(
+        select(RuleSource).order_by(
+            RuleSource.position.asc(), RuleSource.created_at.desc()
+        )
+    )
     return list(result.all())
 
 
 async def list_rules_summary(db: AsyncSession) -> list[dict[str, Any]]:
     R = RuleSource
     cols = [
-        R.id, R.name, R.mode, R.behavior, R.enabled,
-        R.remote_url, R.auto_update, R.update_interval_sec,
-        R.next_refresh_at, R.last_refresh_at,
-        R.last_status, R.last_error,
-        func.json_array_length(R.cached_payload_lines_json).label("cached_payload_lines_count"),
-        R.created_at, R.updated_at, R.position,
+        R.id,
+        R.name,
+        R.mode,
+        R.behavior,
+        R.enabled,
+        R.remote_url,
+        R.auto_update,
+        R.update_interval_sec,
+        R.next_refresh_at,
+        R.last_refresh_at,
+        R.last_status,
+        R.last_error,
+        func.json_array_length(R.cached_payload_lines_json).label(
+            "cached_payload_lines_count"
+        ),
+        R.created_at,
+        R.updated_at,
+        R.position,
     ]
-    result = await db.execute(select(*cols).order_by(R.position.asc(), R.created_at.desc()))
+    result = await db.execute(
+        select(*cols).order_by(R.position.asc(), R.created_at.desc())
+    )
     return [row._asdict() for row in result.all()]
 
 
