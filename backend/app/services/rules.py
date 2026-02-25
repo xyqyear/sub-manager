@@ -4,11 +4,11 @@ from ipaddress import ip_network
 from typing import Any
 
 import httpx
-from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import RuleSource
+from app.repositories import rules as rule_repo
 from app.schemas.common import RuleBehavior
 from app.schemas.reorder import ReorderRequest
 from app.schemas.rules import RuleCreate, RuleUpdate
@@ -61,24 +61,12 @@ def _parse_rule_payload_from_yaml(content: str, behavior: RuleBehavior) -> list[
     return validate_rule_payload_lines(behavior, lines)
 
 
-async def _assert_unique_name(
-    db: AsyncSession, name: str, exclude_id: str | None = None
-) -> None:
-    query = select(RuleSource).where(RuleSource.name == name)
-    if exclude_id:
-        query = query.where(RuleSource.id != exclude_id)
-    found = await db.scalars(query)
-    if found.first():
-        raise ServiceError(f"rule name already exists: {name}", 409)
-
-
 async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
-    await _assert_unique_name(db, payload.name)
+    if await rule_repo.check_name_exists(db, payload.name):
+        raise ServiceError(f"rule name already exists: {payload.name}", 409)
 
     interval = _normalize_interval(payload.update_interval_sec)
-    max_pos = (
-        await db.execute(select(func.coalesce(func.max(RuleSource.position), -1)))
-    ).scalar_one()
+    max_pos = await rule_repo.get_max_position(db)
     source = RuleSource(
         name=payload.name,
         mode=payload.mode,
@@ -108,17 +96,15 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> RuleSource:
         source.last_refresh_at = utc_now()
         source.next_refresh_at = None
 
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
+    return await rule_repo.save(db, source)
 
 
 async def update_rule(
     db: AsyncSession, source: RuleSource, payload: RuleUpdate
 ) -> RuleSource:
     if payload.name is not None and payload.name != source.name:
-        await _assert_unique_name(db, payload.name, exclude_id=source.id)
+        if await rule_repo.check_name_exists(db, payload.name, exclude_id=source.id):
+            raise ServiceError(f"rule name already exists: {payload.name}", 409)
         source.name = payload.name
 
     if payload.enabled is not None:
@@ -164,10 +150,7 @@ async def update_rule(
             source.auto_update = False
             source.next_refresh_at = None
 
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
+    return await rule_repo.save(db, source)
 
 
 async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSource:
@@ -175,10 +158,7 @@ async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSourc
         source.last_status = "ok"
         source.last_error = None
         source.last_refresh_at = utc_now()
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
-        return source
+        return await rule_repo.save(db, source)
 
     if not source.remote_url:
         raise ServiceError("remote rule has no remote_url", 422)
@@ -215,9 +195,7 @@ async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSourc
             if source.auto_update
             else None
         )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
+        await rule_repo.save(db, source)
         raise
     except Exception as exc:
         source.last_status = "error"
@@ -227,85 +205,36 @@ async def refresh_remote_rule(db: AsyncSession, source: RuleSource) -> RuleSourc
             if source.auto_update
             else None
         )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
+        await rule_repo.save(db, source)
         raise ServiceError(source.last_error or "", 502) from exc
 
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
+    return await rule_repo.save(db, source)
 
 
 async def get_rule_or_404(db: AsyncSession, rule_id: str) -> RuleSource:
-    source = await db.get(RuleSource, rule_id)
+    source = await rule_repo.get_by_id(db, rule_id)
     if source is None:
         raise ServiceError("rule not found", 404)
     return source
 
 
 async def list_rules(db: AsyncSession) -> list[RuleSource]:
-    result = await db.scalars(
-        select(RuleSource).order_by(
-            RuleSource.position.asc(), RuleSource.created_at.desc()
-        )
-    )
-    return list(result.all())
+    return await rule_repo.list_all_ordered(db)
 
 
 async def list_rules_summary(db: AsyncSession) -> list[dict[str, Any]]:
-    R = RuleSource
-    cols = [
-        R.id,
-        R.name,
-        R.mode,
-        R.behavior,
-        R.enabled,
-        R.remote_url,
-        R.auto_update,
-        R.update_interval_sec,
-        R.next_refresh_at,
-        R.last_refresh_at,
-        R.last_status,
-        R.last_error,
-        func.json_array_length(R.cached_payload_lines_json).label(
-            "cached_payload_lines_count"
-        ),
-        R.created_at,
-        R.updated_at,
-        R.position,
-    ]
-    result = await db.execute(
-        select(*cols).order_by(R.position.asc(), R.created_at.desc())
-    )
-    return [row._asdict() for row in result.all()]
+    return await rule_repo.list_summary(db)
 
 
 async def delete_rule(db: AsyncSession, source: RuleSource) -> None:
-    await db.delete(source)
-    await db.commit()
+    await rule_repo.delete(db, source)
 
 
 async def get_due_rule_ids(db: AsyncSession) -> list[str]:
-    now = utc_now()
-    result = await db.scalars(
-        select(RuleSource.id).where(
-            RuleSource.mode == "remote",
-            RuleSource.auto_update.is_(True),
-            RuleSource.enabled.is_(True),
-            RuleSource.next_refresh_at.is_not(None),
-            RuleSource.next_refresh_at <= now,
-        )
-    )
-    return list(result.all())
+    return await rule_repo.get_due_ids(db)
 
 
 async def reorder_rules(db: AsyncSession, payload: ReorderRequest) -> None:
-    for item in payload.items:
-        await db.execute(
-            update(RuleSource)
-            .where(RuleSource.id == item.id)
-            .values(position=item.position)
-        )
-    await db.commit()
+    await rule_repo.bulk_update_positions(
+        db, [(item.id, item.position) for item in payload.items]
+    )

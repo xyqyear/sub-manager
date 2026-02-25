@@ -7,16 +7,17 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import (
     MainConfig,
-    RouteTemplate,
     RuleSource,
     SubscriptionSource,
 )
+from app.repositories import route_templates as route_template_repo
+from app.repositories import rules as rule_repo
+from app.repositories import subscriptions as subscription_repo
 from app.schemas.common import FinalTargetType, GroupMode, RuleBehavior
 from app.schemas.configs import (
     DialerOverridePayload,
@@ -677,7 +678,7 @@ async def resolve_route_bindings(
     if not route_template_id:
         return []
 
-    template = await db.get(RouteTemplate, route_template_id)
+    template = await route_template_repo.get_by_id(db, route_template_id)
     if template is None:
         raise GenerationError(f"route template not found: {route_template_id}", 422)
 
@@ -722,13 +723,7 @@ async def _fetch_subscriptions(
                 sub_ids_ordered.append(rule.subscription_source_id)
                 seen.add(rule.subscription_source_id)
 
-    sub_map: dict[str, SubscriptionSource] = {}
-    if sub_ids_ordered:
-        result = await db.scalars(
-            select(SubscriptionSource).where(SubscriptionSource.id.in_(sub_ids_ordered))
-        )
-        sub_map = {item.id: item for item in result.all()}
-
+    sub_map = await subscription_repo.fetch_by_ids(db, sub_ids_ordered)
     return sub_ids_ordered, sub_map
 
 
@@ -737,10 +732,7 @@ async def _fetch_rule_sources(
     route_bindings: list[RouteBindingPayload],
 ) -> dict[str, RuleSource]:
     rule_ids = [rb.rule_source_id for rb in route_bindings]
-    if not rule_ids:
-        return {}
-    result = await db.scalars(select(RuleSource).where(RuleSource.id.in_(rule_ids)))
-    return {item.id: item for item in result.all()}
+    return await rule_repo.fetch_by_ids(db, rule_ids)
 
 
 # ---------------------------------------------------------------------------

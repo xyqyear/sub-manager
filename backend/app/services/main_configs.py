@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import (
-    MainConfig,
-    RouteTemplate,
-    SubscriptionSource,
-)
+from app.models import MainConfig
+from app.repositories import main_configs as main_config_repo
+from app.repositories import route_templates as route_template_repo
+from app.repositories import subscriptions as subscription_repo
 from app.schemas.configs import (
     DialerOverridePayload,
     FilteredGroupPayload,
@@ -31,15 +29,6 @@ from app.services.generator import (
 from app.yaml import YAMLError, yaml_load
 
 
-async def _assert_unique_config_name(db: AsyncSession, name: str, exclude_id: str | None = None) -> None:
-    query = select(MainConfig).where(MainConfig.name == name)
-    if exclude_id:
-        query = query.where(MainConfig.id != exclude_id)
-    found = await db.scalars(query)
-    if found.first():
-        raise ServiceError(f"main config name already exists: {name}", 409)
-
-
 def validate_base_yaml(base_config_yaml: str) -> None:
     try:
         parsed = yaml_load(base_config_yaml)
@@ -55,7 +44,8 @@ def validate_base_yaml(base_config_yaml: str) -> None:
 
 
 async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> MainConfig:
-    await _assert_unique_config_name(db, payload.name)
+    if await main_config_repo.check_name_exists(db, payload.name):
+        raise ServiceError(f"main config name already exists: {payload.name}", 409)
     validate_base_yaml(payload.base_config_yaml)
 
     if payload.filtered_groups or payload.manual_groups or payload.dialer_override_rules:
@@ -68,7 +58,7 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
     group_name_set = _collect_group_names(payload.filtered_groups, payload.manual_groups)
     await validate_slot_mappings(db, payload.route_template_id, payload.slot_mappings, group_name_set)
 
-    max_pos = (await db.execute(select(func.coalesce(func.max(MainConfig.position), -1)))).scalar_one()
+    max_pos = await main_config_repo.get_max_position(db)
 
     config = MainConfig(
         name=payload.name,
@@ -86,15 +76,13 @@ async def create_main_config(db: AsyncSession, payload: MainConfigCreate) -> Mai
         position=max_pos + 1,
     )
 
-    db.add(config)
-    await db.commit()
-    await db.refresh(config)
-    return config
+    return await main_config_repo.save(db, config)
 
 
 async def update_main_config(db: AsyncSession, config: MainConfig, payload: MainConfigUpdate) -> MainConfig:
     if payload.name is not None and payload.name != config.name:
-        await _assert_unique_config_name(db, payload.name, exclude_id=config.id)
+        if await main_config_repo.check_name_exists(db, payload.name, exclude_id=config.id):
+            raise ServiceError(f"main config name already exists: {payload.name}", 409)
         config.name = payload.name
 
     if payload.base_config_yaml is not None:
@@ -141,27 +129,22 @@ async def update_main_config(db: AsyncSession, config: MainConfig, payload: Main
         config.route_template_id = rt_id
         config.slot_mappings = sm
 
-    db.add(config)
-    await db.commit()
-    await db.refresh(config)
-    return config
+    return await main_config_repo.save(db, config)
 
 
 async def list_main_configs(db: AsyncSession) -> list[MainConfig]:
-    result = await db.scalars(select(MainConfig).order_by(MainConfig.position.asc(), MainConfig.created_at.desc()))
-    return list(result.all())
+    return await main_config_repo.list_all_ordered(db)
 
 
 async def get_main_config_or_404(db: AsyncSession, config_id: str) -> MainConfig:
-    config = await db.get(MainConfig, config_id)
+    config = await main_config_repo.get_by_id(db, config_id)
     if config is None:
         raise ServiceError("main config not found", 404)
     return config
 
 
 async def delete_main_config(db: AsyncSession, config: MainConfig) -> None:
-    await db.delete(config)
-    await db.commit()
+    await main_config_repo.delete(db, config)
 
 
 async def validate_builder_refs(
@@ -174,10 +157,7 @@ async def validate_builder_refs(
         for rule in group.rules
     }
     if subscription_ids:
-        result = await db.scalars(
-            select(SubscriptionSource.id).where(SubscriptionSource.id.in_(subscription_ids))
-        )
-        found = set(result.all())
+        found = await main_config_repo.check_subscription_ids_exist(db, subscription_ids)
         missing = subscription_ids - found
         if missing:
             raise ServiceError(f"unknown subscription_source_id: {sorted(missing)}", 422)
@@ -281,7 +261,7 @@ async def validate_slot_mappings(
     if not route_template_id:
         return
 
-    template = await db.get(RouteTemplate, route_template_id)
+    template = await route_template_repo.get_by_id(db, route_template_id)
     if template is None:
         raise ServiceError(f"route template not found: {route_template_id}", 422)
 
@@ -310,15 +290,7 @@ async def preview_filtered_group_matches(
                 subscription_ids.append(rule.subscription_source_id)
                 seen_ids.add(rule.subscription_source_id)
 
-    subscription_map: dict[str, SubscriptionSource] = {}
-    if subscription_ids:
-        result = await db.scalars(
-            select(SubscriptionSource).where(SubscriptionSource.id.in_(subscription_ids))
-        )
-        subscription_map = {
-            row.id: row
-            for row in result.all()
-        }
+    subscription_map = await subscription_repo.fetch_by_ids(db, subscription_ids)
 
     ordered_sources: list[OrderedSource] = []
     for source_id in subscription_ids:
@@ -393,10 +365,6 @@ async def preview_filtered_group_matches(
 
 
 async def reorder_main_configs(db: AsyncSession, payload: ReorderRequest) -> None:
-    for item in payload.items:
-        await db.execute(
-            update(MainConfig)
-            .where(MainConfig.id == item.id)
-            .values(position=item.position)
-        )
-    await db.commit()
+    await main_config_repo.bulk_update_positions(
+        db, [(item.id, item.position) for item in payload.items]
+    )

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import MainConfig, RouteTemplate, RuleSource
+from app.models import RouteTemplate
+from app.repositories import route_templates as route_template_repo
 from app.schemas.reorder import ReorderRequest
 from app.schemas.route_templates import (
     RouteTemplateBindingPayload,
@@ -12,17 +12,6 @@ from app.schemas.route_templates import (
     RouteTemplateUpdate,
 )
 from app.services.common import ServiceError
-
-
-async def _assert_unique_template_name(
-    db: AsyncSession, name: str, exclude_id: str | None = None
-) -> None:
-    query = select(RouteTemplate).where(RouteTemplate.name == name)
-    if exclude_id:
-        query = query.where(RouteTemplate.id != exclude_id)
-    found = await db.scalars(query)
-    if found.first():
-        raise ServiceError(f"route template name already exists: {name}", 409)
 
 
 def validate_template_shapes(
@@ -56,8 +45,7 @@ async def validate_template_refs(
     rule_ids = {b.rule_source_id for b in bindings}
     if not rule_ids:
         return
-    result = await db.scalars(select(RuleSource.id).where(RuleSource.id.in_(rule_ids)))
-    found = set(result.all())
+    found = await route_template_repo.check_rule_source_ids_exist(db, rule_ids)
     missing = rule_ids - found
     if missing:
         raise ServiceError(f"unknown rule_source_id: {sorted(missing)}", 422)
@@ -66,14 +54,13 @@ async def validate_template_refs(
 async def create_route_template(
     db: AsyncSession, payload: RouteTemplateCreate
 ) -> RouteTemplate:
-    await _assert_unique_template_name(db, payload.name)
+    if await route_template_repo.check_name_exists(db, payload.name):
+        raise ServiceError(f"route template name already exists: {payload.name}", 409)
     if payload.slots or payload.bindings:
         validate_template_shapes(payload.slots, payload.bindings)
         await validate_template_refs(db, payload.bindings)
 
-    max_pos = (
-        await db.execute(select(func.coalesce(func.max(RouteTemplate.position), -1)))
-    ).scalar_one()
+    max_pos = await route_template_repo.get_max_position(db)
 
     template = RouteTemplate(
         name=payload.name,
@@ -81,10 +68,7 @@ async def create_route_template(
         bindings=payload.bindings,
         position=max_pos + 1,
     )
-    db.add(template)
-    await db.commit()
-    await db.refresh(template)
-    return template
+    return await route_template_repo.save(db, template)
 
 
 async def update_route_template(
@@ -93,7 +77,8 @@ async def update_route_template(
     payload: RouteTemplateUpdate,
 ) -> RouteTemplate:
     if payload.name is not None and payload.name != template.name:
-        await _assert_unique_template_name(db, payload.name, exclude_id=template.id)
+        if await route_template_repo.check_name_exists(db, payload.name, exclude_id=template.id):
+            raise ServiceError(f"route template name already exists: {payload.name}", 409)
         template.name = payload.name
 
     slots = payload.slots if payload.slots is not None else template.slots
@@ -105,47 +90,29 @@ async def update_route_template(
         template.slots = slots
         template.bindings = bindings
 
-    db.add(template)
-    await db.commit()
-    await db.refresh(template)
-    return template
+    return await route_template_repo.save(db, template)
 
 
 async def list_route_templates(db: AsyncSession) -> list[RouteTemplate]:
-    result = await db.scalars(
-        select(RouteTemplate).order_by(
-            RouteTemplate.position.asc(), RouteTemplate.created_at.desc()
-        )
-    )
-    return list(result.all())
+    return await route_template_repo.list_all_ordered(db)
 
 
 async def get_route_template_or_404(
     db: AsyncSession, template_id: str
 ) -> RouteTemplate:
-    template = await db.get(RouteTemplate, template_id)
+    template = await route_template_repo.get_by_id(db, template_id)
     if template is None:
         raise ServiceError("route template not found", 404)
     return template
 
 
 async def delete_route_template(db: AsyncSession, template: RouteTemplate) -> None:
-    result = await db.scalars(
-        select(MainConfig.id)
-        .where(MainConfig.route_template_id == template.id)
-        .limit(1)
-    )
-    if result.first():
+    if await route_template_repo.has_referencing_main_configs(db, template.id):
         raise ServiceError("route template is referenced by a main config", 409)
-    await db.delete(template)
-    await db.commit()
+    await route_template_repo.delete(db, template)
 
 
 async def reorder_route_templates(db: AsyncSession, payload: ReorderRequest) -> None:
-    for item in payload.items:
-        await db.execute(
-            update(RouteTemplate)
-            .where(RouteTemplate.id == item.id)
-            .values(position=item.position)
-        )
-    await db.commit()
+    await route_template_repo.bulk_update_positions(
+        db, [(item.id, item.position) for item in payload.items]
+    )

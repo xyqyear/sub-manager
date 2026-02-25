@@ -4,11 +4,11 @@ import copy
 from typing import Any
 
 import httpx
-from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import SubscriptionSource
+from app.repositories import subscriptions as subscription_repo
 from app.schemas.reorder import ReorderRequest
 from app.schemas.subscriptions import SubscriptionCreate, SubscriptionUpdate
 from app.services.common import (
@@ -63,23 +63,15 @@ def _parse_remote_subscription_payload(content: str) -> list[dict[str, Any]]:
     return normalized
 
 
-async def _assert_unique_name(db: AsyncSession, name: str, exclude_id: str | None = None) -> None:
-    query = select(SubscriptionSource).where(SubscriptionSource.name == name)
-    if exclude_id:
-        query = query.where(SubscriptionSource.id != exclude_id)
-    found = await db.scalars(query)
-    if found.first():
-        raise ServiceError(f"subscription name already exists: {name}", 409)
-
-
 async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> SubscriptionSource:
-    await _assert_unique_name(db, payload.name)
+    if await subscription_repo.check_name_exists(db, payload.name):
+        raise ServiceError(f"subscription name already exists: {payload.name}", 409)
 
     mode = payload.mode
     update_interval_sec = _normalize_interval(payload.update_interval_sec)
     now = utc_now()
 
-    max_pos = (await db.execute(select(func.coalesce(func.max(SubscriptionSource.position), -1)))).scalar_one()
+    max_pos = await subscription_repo.get_max_position(db)
 
     source = SubscriptionSource(
         name=payload.name,
@@ -105,10 +97,7 @@ async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> 
         source.last_status = "ok"
         source.next_refresh_at = None
 
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
+    return await subscription_repo.save(db, source)
 
 
 async def update_subscription(
@@ -117,7 +106,8 @@ async def update_subscription(
     payload: SubscriptionUpdate,
 ) -> SubscriptionSource:
     if payload.name is not None and payload.name != source.name:
-        await _assert_unique_name(db, payload.name, exclude_id=source.id)
+        if await subscription_repo.check_name_exists(db, payload.name, exclude_id=source.id):
+            raise ServiceError(f"subscription name already exists: {payload.name}", 409)
         source.name = payload.name
 
     if payload.enabled is not None:
@@ -157,10 +147,7 @@ async def update_subscription(
             source.auto_update = False
             source.next_refresh_at = None
 
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
+    return await subscription_repo.save(db, source)
 
 
 async def refresh_remote_subscription(db: AsyncSession, source: SubscriptionSource) -> SubscriptionSource:
@@ -168,10 +155,7 @@ async def refresh_remote_subscription(db: AsyncSession, source: SubscriptionSour
         source.last_status = "ok"
         source.last_error = None
         source.last_refresh_at = utc_now()
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
-        return source
+        return await subscription_repo.save(db, source)
 
     if not source.remote_url:
         raise ServiceError("remote subscription has no remote_url", 422)
@@ -214,9 +198,7 @@ async def refresh_remote_subscription(db: AsyncSession, source: SubscriptionSour
         source.next_refresh_at = (
             next_refresh_time(source.update_interval_sec) if source.auto_update else None
         )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
+        await subscription_repo.save(db, source)
         raise
     except Exception as exc:
         source.last_status = "error"
@@ -224,71 +206,36 @@ async def refresh_remote_subscription(db: AsyncSession, source: SubscriptionSour
         source.next_refresh_at = (
             next_refresh_time(source.update_interval_sec) if source.auto_update else None
         )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
+        await subscription_repo.save(db, source)
         raise ServiceError(source.last_error or "subscription refresh failed", 502) from exc
 
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
+    return await subscription_repo.save(db, source)
 
 
 async def get_subscription_or_404(db: AsyncSession, subscription_id: str) -> SubscriptionSource:
-    source = await db.get(SubscriptionSource, subscription_id)
+    source = await subscription_repo.get_by_id(db, subscription_id)
     if source is None:
         raise ServiceError("subscription not found", 404)
     return source
 
 
 async def list_subscriptions(db: AsyncSession) -> list[SubscriptionSource]:
-    result = await db.scalars(
-        select(SubscriptionSource).order_by(SubscriptionSource.position.asc(), SubscriptionSource.created_at.desc())
-    )
-    return list(result.all())
+    return await subscription_repo.list_all_ordered(db)
 
 
 async def list_subscriptions_summary(db: AsyncSession) -> list[dict[str, Any]]:
-    S = SubscriptionSource
-    cols = [
-        S.id, S.name, S.mode, S.enabled,
-        S.remote_url, S.remote_auth_header,
-        S.auto_update, S.update_interval_sec,
-        S.next_refresh_at, S.last_refresh_at,
-        S.last_status, S.last_error,
-        S.subscription_userinfo_raw, S.subscription_userinfo_json,
-        func.json_array_length(S.cached_proxies_json).label("cached_proxies_count"),
-        S.created_at, S.updated_at, S.position,
-    ]
-    result = await db.execute(select(*cols).order_by(S.position.asc(), S.created_at.desc()))
-    return [row._asdict() for row in result.all()]
+    return await subscription_repo.list_summary(db)
 
 
 async def delete_subscription(db: AsyncSession, source: SubscriptionSource) -> None:
-    await db.delete(source)
-    await db.commit()
+    await subscription_repo.delete(db, source)
 
 
 async def get_due_subscription_ids(db: AsyncSession) -> list[str]:
-    now = utc_now()
-    result = await db.scalars(
-        select(SubscriptionSource.id).where(
-            SubscriptionSource.mode == "remote",
-            SubscriptionSource.auto_update.is_(True),
-            SubscriptionSource.enabled.is_(True),
-            SubscriptionSource.next_refresh_at.is_not(None),
-            SubscriptionSource.next_refresh_at <= now,
-        )
-    )
-    return list(result.all())
+    return await subscription_repo.get_due_ids(db)
 
 
 async def reorder_subscriptions(db: AsyncSession, payload: ReorderRequest) -> None:
-    for item in payload.items:
-        await db.execute(
-            update(SubscriptionSource)
-            .where(SubscriptionSource.id == item.id)
-            .values(position=item.position)
-        )
-    await db.commit()
+    await subscription_repo.bulk_update_positions(
+        db, [(item.id, item.position) for item in payload.items]
+    )
