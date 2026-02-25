@@ -469,7 +469,7 @@ LastStatus: "never" | "ok" | "error"
 
 - Auth: token in `localStorage` key `sub_manager_admin_token`. Axios interceptor adds bearer header.
 - Routes: `/login`, `/subscriptions`, `/rules`, `/routes`, `/configs` (guarded).
-- Builder editor: `MainConfigEditorDrawer.tsx` — visual form with collapsible sections for filtered groups (with live regex matching preview), manual groups, dialer overrides, and route template selection with slot mappings.
+- Builder editor: `MainConfigEditorDrawer.tsx` — visual form with collapsible sections for filtered groups (with live regex matching preview), manual groups, dialer overrides, and route template selection with slot mappings. Includes "Import from config" to copy all builder fields (except name/enabled) from an existing config.
 - Drag-and-drop: `@dnd-kit/core` + `@dnd-kit/sortable` for reordering. Top-level card grids use `rectSortingStrategy`; form lists use `verticalListSortingStrategy` with isolated `DndContext` per nested list. Insert-above/below buttons on all sortable form lists.
 - Utilities: `format.ts` (byte formatting, traffic colors), `time.ts` (relative time display), `download.ts` (file download via Blob).
 - Frontend dev proxy: Vite proxies `/api` to `http://localhost:5678`.

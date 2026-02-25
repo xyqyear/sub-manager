@@ -20,7 +20,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { CloseOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined } from "@ant-design/icons";
+import { CloseOutlined, DeleteOutlined, EyeOutlined, ImportOutlined, PlusOutlined, SaveOutlined } from "@ant-design/icons";
 import { InsertAboveOutlined, InsertBelowOutlined } from "@/components/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
@@ -29,7 +29,6 @@ import type {
   MainConfig,
   PreviewResponse,
   RouteTemplate,
-  RuleSourceListItem,
   SubscriptionSourceListItem,
 } from "@/types/api";
 import api, { errorDetail } from "@/utils/api";
@@ -45,8 +44,8 @@ interface MainConfigEditorDrawerProps {
   open: boolean;
   config: MainConfig | null;
   mode: EditorMode;
+  configs: MainConfig[];
   subscriptions: SubscriptionSourceListItem[];
-  rules: RuleSourceListItem[];
   routeTemplates: RouteTemplate[];
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -131,8 +130,8 @@ export default function MainConfigEditorDrawer({
   open,
   config,
   mode,
+  configs,
   subscriptions,
-  rules,
   routeTemplates,
   onClose,
   onSaved,
@@ -144,6 +143,8 @@ export default function MainConfigEditorDrawer({
     useState<FilteredGroupPreviewResponse["groups"]>([]);
   const [previewing, setPreviewing] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSourceId, setImportSourceId] = useState<string>();
   const [previewYaml, setPreviewYaml] = useState("");
   const [previewDiagnostics, setPreviewDiagnostics] = useState<PreviewResponse["diagnostics"] | null>(null);
 
@@ -175,6 +176,14 @@ export default function MainConfigEditorDrawer({
         .filter((item) => item?.name)
         .map((item) => ({ label: item.name, value: item.name })),
     [filteredGroupsWatch],
+  );
+
+  const importConfigOptions = useMemo(
+    () =>
+      configs
+        .filter((c) => c.id !== config?.id)
+        .map((c) => ({ label: c.name, value: c.id })),
+    [configs, config],
   );
 
   const manualGroupOptions = useMemo(
@@ -245,6 +254,28 @@ export default function MainConfigEditorDrawer({
     },
     [triggerFilteredGroupPreview],
   );
+
+  const handleImportConfirm = useCallback(() => {
+    const source = configs.find((c) => c.id === importSourceId);
+    if (!source) return;
+
+    const nextValues: Partial<EditorFormValues> = {
+      base_config_yaml: source.base_config_yaml,
+      final_target_type: source.final_target_type,
+      final_target_group_name: source.final_target_group_name ?? "",
+      test_url: source.test_url ?? "",
+      test_interval_sec: source.test_interval_sec ?? undefined,
+      filtered_groups: source.filtered_groups,
+      manual_groups: source.manual_groups,
+      dialer_override_rules: source.dialer_override_rules,
+      route_template_id: source.route_template_id ?? undefined,
+      slot_mappings: source.slot_mappings ?? [],
+    };
+    form.setFieldsValue(nextValues);
+    setImportOpen(false);
+    setImportSourceId(undefined);
+    queueFilteredGroupPreview(nextValues as Partial<EditorFormValues>);
+  }, [configs, importSourceId, form, queueFilteredGroupPreview]);
 
   useEffect(() => {
     if (!open) {
@@ -358,6 +389,9 @@ export default function MainConfigEditorDrawer({
       destroyOnHidden
       extra={
         <Space>
+          <Tooltip title="Import from config">
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)} />
+          </Tooltip>
           <Tooltip title="Preview">
             <Button icon={<EyeOutlined />} onClick={() => void handlePreview()} loading={previewing} />
           </Tooltip>
@@ -1021,6 +1055,31 @@ export default function MainConfigEditorDrawer({
           rows={26}
           readOnly
           style={{ fontFamily: "monospace" }}
+        />
+      </Modal>
+
+      <Modal
+        title="Import from Another Config"
+        open={importOpen}
+        onCancel={() => { setImportOpen(false); setImportSourceId(undefined); }}
+        onOk={handleImportConfirm}
+        okButtonProps={{ disabled: !importSourceId }}
+        destroyOnHidden
+      >
+        <Alert
+          type="warning"
+          message="This will overwrite all current form fields except name and enabled status."
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        <Select
+          showSearch
+          optionFilterProp="label"
+          placeholder="Select a config..."
+          options={importConfigOptions}
+          value={importSourceId}
+          onChange={setImportSourceId}
+          style={{ width: "100%" }}
         />
       </Modal>
     </Drawer>
