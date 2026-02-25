@@ -4,7 +4,7 @@
     {
       "label": "Frontend: Dev Server",
       "type": "shell",
-      "command": "pnpm dev",
+      "command": "bash -lc 'pnpm dev'",
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },
