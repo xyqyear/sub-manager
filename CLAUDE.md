@@ -73,6 +73,7 @@ Each filtered group defines regex rules against one or more subscription sources
 
 - Name: "HK", regex `香港|HK|Hong Kong` against subscription "Provider A" → produces a proxy group containing only matching HK nodes
 - Mode: `select` (manual pick), `url-test` (auto-select fastest), or `fallback` (auto-failover)
+- `copy_nodes`: when enabled, duplicates matched proxies with `[GroupName]` suffix so the same node can appear in multiple groups independently (useful for dialer-proxy chains)
 
 Only nodes matched by at least one filtered group appear in the final config. Unmatched nodes are excluded entirely.
 
@@ -99,7 +100,7 @@ Route templates are standalone resources that define route bindings with named "
 
 Multiple main configs can reference the same route template. Each config provides **slot mappings** that map each slot name to an actual proxy group name from its filtered/manual groups.
 
-Each route binding generates a `select`-type proxy group whose members are: `[default_group, DIRECT, REJECT] + all manual groups + all filtered groups`, allowing the user to override the default at runtime in Clash Meta.
+Each route binding generates a `select`-type proxy group whose members are: `[default_group, DIRECT] + manual_groups + filtered_groups + [REJECT]`, allowing the user to override the default at runtime in Clash Meta.
 
 The order of bindings determines rule matching priority in the generated config. A final implicit MATCH rule catches all remaining traffic, directed to DIRECT, REJECT, or a chosen group.
 
@@ -114,7 +115,7 @@ Rule payloads referenced in the config's `rule-providers` section point back to 
 | Layer    | Stack                                                  |
 | -------- | ------------------------------------------------------ |
 | Backend  | FastAPI + async SQLAlchemy + aiosqlite, Python >= 3.13 |
-| Frontend | React 19 + Vite 7 + Ant Design 6 + TypeScript 5.9      |
+| Frontend | React 19 + Vite 7 + Ant Design 6 + TypeScript 5.9     |
 | Database | SQLite (single file `backend/db.sqlite3`)              |
 | Auth     | Static bearer token (admin)                            |
 | Deploy   | Docker (multi-stage build, single container)           |
@@ -135,6 +136,11 @@ backend/
     yaml.py                        # ruamel.yaml wrapper (yaml_load, yaml_dump, YAMLError)
     models.py                      # SQLAlchemy ORM models
     db/database.py                 # async engine/session, init_db() with Alembic
+    repositories/                  # data access layer (DB queries and mutations)
+      subscriptions.py             # subscription CRUD + queries
+      rules.py                     # rule CRUD + queries
+      route_templates.py           # route template CRUD + queries
+      main_configs.py              # main config CRUD + queries
     routers/admin/                 # admin CRUD APIs (bearer protected)
       health.py                    # GET /api/admin/health
       subscriptions.py             # subscription CRUD + refresh
@@ -144,6 +150,7 @@ backend/
     routers/public/
       configs.py                   # public artifact + rule-payload fetch
     schemas/                       # pydantic request/response models
+      common.py                    # centralized Literal types + UtcDatetime
       subscriptions.py
       rules.py
       configs.py                   # MainConfigCreate/Update/Read, DraftPreviewRequest, etc.
@@ -163,7 +170,7 @@ backend/
       001_initial.py               # baseline schema
       002_route_templates.py       # route templates + data migration from route_bindings
       003_hoist_test_url.py        # move test_url/test_interval_sec from groups to main_config
-      004_add_position_columns.py   # add position column to 4 top-level tables
+      004_add_position_columns.py  # add position column to 4 top-level tables
   tests/
     conftest.py                    # test DB isolation (/tmp/sub_manager_test.sqlite3)
     test_admin_auth.py
@@ -177,12 +184,19 @@ frontend/
   src/
     main.tsx                       # app bootstrap, Ant Design theme, router
     App.tsx                        # shell, guarded routing, navigation
-    utils/api.ts                   # axios instance + bearer interceptor + token storage
+    utils/
+      api.ts                       # axios instance + bearer interceptor + token storage
+      download.ts                  # file download utility (Blob + click simulation)
+      format.ts                    # formatBytes, TRAFFIC_COLORS
+      time.ts                      # formatRelativeTime
     types/api.ts                   # TS interfaces matching backend schemas
     hooks/
       useIsMobile.ts               # responsive breakpoint hook
     components/
       CardGrid.tsx                 # reusable card grid with optional drag-and-drop reorder
+      icons/                       # custom SVG icon components
+        InsertAboveOutlined.tsx
+        InsertBelowOutlined.tsx
       dnd/                         # @dnd-kit drag-and-drop primitives
         DragHandle.tsx             # grab-handle icon with forwarded ref
         SortableItem.tsx           # useSortable wrapper, render-prop for drag handle
@@ -205,6 +219,52 @@ references/                        # NOT runtime code, for context only
   profile.ts                       # mihomo.party source showing fetch headers/parsing
 ```
 
+## Backend Architecture
+
+The backend follows a three-layer pattern: **routers → services → repositories**.
+
+- **Routers** handle HTTP concerns: request parsing, response serialization, error translation.
+- **Services** contain business logic: validation, workflow orchestration, external HTTP fetches.
+- **Repositories** encapsulate all database access: queries, mutations, position management.
+
+Each of the four resource types (subscriptions, rules, route templates, main configs) has its own module in each layer. The generator is a standalone service that reads from repositories directly.
+
+### Centralized Domain Types (`schemas/common.py`)
+
+All domain Literal types are defined once and shared across schemas, models, and services:
+
+```python
+SourceMode = Literal["remote", "manual"]
+RuleBehavior = Literal["classical", "domain", "ipcidr"]
+LastStatus = Literal["never", "ok", "error"]
+FinalTargetType = Literal["DIRECT", "REJECT", "group"]
+GroupMode = Literal["select", "fallback", "url-test"]
+MemberType = Literal["filtered_group", "manual_group"]
+
+UtcDatetime = Annotated[datetime, BeforeValidator(_ensure_utc)]
+```
+
+ORM model columns use these types directly (e.g., `mode: Mapped[SourceMode]`), ensuring type consistency from database to API response.
+
+### Repository Layer (`repositories/`)
+
+Each repository module provides async functions for database operations. Common patterns across all four modules:
+
+- `check_name_exists(db, name, exclude_id?)` — uniqueness check
+- `get_max_position(db)` — next position value for ordering
+- `save(db, entity)` — insert or update + commit + refresh
+- `get_by_id(db, id)` — single row fetch
+- `list_all_ordered(db)` — all rows ordered by position then created_at
+- `delete(db, entity)` — delete + commit
+- `bulk_update_positions(db, items)` — batch position update for reorder
+
+Subscription and rule repositories additionally provide:
+- `list_summary(db)` — optimized list query with computed count columns (e.g., `json_array_length` for cached proxy/rule counts)
+- `get_due_ids(db)` — find sources due for background refresh
+- `fetch_by_ids(db, ids)` — bulk fetch returning `dict[str, Entity]`
+
+Route template repository adds `check_rule_source_ids_exist()` and `has_referencing_main_configs()`. Main config repository adds `check_subscription_ids_exist()`.
+
 ## Domain Model
 
 The three resource types described in the Product Overview map to the following database tables and fields.
@@ -216,17 +276,19 @@ Corresponds to Stage 1 (proxy node providers). Two modes:
 - **remote**: Fetched from URL with `User-Agent: mihomo/1.18.3`, optional `Authorization` header. Caches `proxies` list from YAML. Parses `subscription-userinfo` header for traffic data.
 - **manual**: User provides a single YAML proxy object directly.
 
-Fields: `id`, `name` (unique), `mode`, `enabled`, `remote_url`, `remote_auth_header`, `auto_update`, `update_interval_sec`, `next_refresh_at`, `last_status` (never/ok/error), `cached_proxies_json`.
+Fields: `id`, `name` (unique), `mode`, `enabled`, `remote_url`, `remote_auth_header`, `auto_update`, `update_interval_sec`, `next_refresh_at`, `last_refresh_at`, `last_status` (never/ok/error), `last_error`, `subscription_userinfo_raw`, `subscription_userinfo_json`, `cached_raw_yaml`, `cached_proxies_json`, `position`.
 
 ### Rule Sources (`rule_source`)
 
 Corresponds to Stage 2 (traffic routing rules). Two modes (remote/manual). Each has a `behavior`: `classical`, `domain`, or `ipcidr`. Cached as `payload_lines` (list of strings). Only YAML format supported.
 
+Fields: `id`, `name` (unique), `mode`, `behavior`, `enabled`, `remote_url`, `auto_update`, `update_interval_sec`, `next_refresh_at`, `last_refresh_at`, `last_status`, `last_error`, `cached_payload_lines_json`, `position`.
+
 ### Route Templates (`route_template`)
 
 Standalone resource defining reusable route bindings with named slots. Multiple main configs can reference the same template.
 
-Fields: `id`, `name` (unique), `slots` (PydanticListType of `RouteTemplateSlotPayload`), `bindings` (PydanticListType of `RouteTemplateBindingPayload`), `created_at`, `updated_at`.
+Fields: `id`, `name` (unique), `slots` (PydanticListType of `RouteTemplateSlotPayload`), `bindings` (PydanticListType of `RouteTemplateBindingPayload`), `position`, `created_at`, `updated_at`.
 
 Slots have `name` and `position`. Bindings have `position`, `binding_name`, `rule_source_id`, `default_target` (slot name, DIRECT, or REJECT), and `no_resolve`.
 
@@ -236,6 +298,7 @@ Corresponds to Stage 3 (the composition layer). A main config combines subscript
 
 - `base_config_yaml`: base Clash settings (ports, DNS, TUN, etc.)
 - `final_target_type`: DIRECT / REJECT / group (for the trailing MATCH rule)
+- `final_target_group_name`: group name when `final_target_type` is "group"
 - `test_url`: optional test URL for url-test/fallback groups (nullable, applied to all groups during generation)
 - `test_interval_sec`: optional test interval in seconds (nullable, applied to all groups during generation)
 - `route_template_id`: reference to a route template (nullable)
@@ -254,23 +317,26 @@ All IDs are UUID strings (36 chars). All tables have `created_at`/`updated_at` t
 
 The generation pipeline uses a single `GenerationInput` model and `generate_config_yaml()` entry point for both saved configs and draft previews. Callers construct `GenerationInput` from either a `MainConfig` ORM object or a `DraftPreviewRequest` schema.
 
-1. **Resolve route bindings** - `resolve_route_bindings()` fetches the route template (if any), maps slot names to group names via slot_mappings, and produces a list of `RouteBindingPayload` for the pipeline.
-2. **Fetch subscriptions** - `_fetch_subscriptions()` derives subscription IDs from filtered group rules (first-seen order), fetches `SubscriptionSource` rows from DB.
-3. **Fetch rule sources** - `_fetch_rule_sources()` fetches `RuleSource` rows referenced by resolved route bindings.
-4. **Load subscriptions** - Gather cached proxies. Skip disabled (with warning). Fail on missing cache (409).
-5. **Name collision resolution** - Raw name -> `raw@source_slug` -> `raw@source_slug#N` if still colliding.
-6. **Filtered groups** - Apply regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Group modes: `select`, `fallback`, `url-test`.
-7. **Manual groups** - Recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
-8. **Dialer overrides** - Each rule targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
-9. **Route groups + rule-providers** - Each binding generates:
-   - A `select` proxy-group: `[default_group, DIRECT, REJECT] + manual_groups + filtered_groups`
-   - A `rule-providers` entry pointing to `{request_base_url}/api/public/rules/{rule_id}.yaml` (base URL derived from the incoming HTTP request)
-   - A `RULE-SET,{provider_key},{binding_name}` rules line
-10. **Final match group** - `build_final_match_group()` creates a `select` proxy-group named "Final" with the user's chosen default target (DIRECT/REJECT/group) as first member, followed by `[DIRECT, manual_groups, filtered_groups, REJECT]` (deduped). Appends `MATCH,Final` as the last rule.
-11. **Proxy filtering** - Only proxies referenced by any group are included. Internal `__` keys stripped.
-12. **Merge** - Generated sections replace `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
+1. **Resolve route bindings** — `resolve_route_bindings()` fetches the route template (if any), maps slot names to group names via slot_mappings, and produces a list of `RouteBindingPayload` for the pipeline.
+2. **Fetch subscriptions** — `_fetch_subscriptions()` derives subscription IDs from filtered group rules (first-seen order), fetches via `subscription_repo.fetch_by_ids()`.
+3. **Fetch rule sources** — `_fetch_rule_sources()` fetches `RuleSource` rows via `rule_repo.fetch_by_ids()`.
+4. **Load subscriptions** — `load_subscriptions()` gathers cached proxies. Skips disabled (with warning). Fails on missing cache (409). Enqueues stale refresh if overdue.
+5. **Check rule staleness** — `check_rule_staleness()` enqueues stale rule refreshes.
+6. **Name collision resolution** — `build_proxy_pool_with_collision_names()`: raw name → `raw@source_slug` → `raw@source_slug#N` if still colliding.
+7. **Filtered groups** — `build_filtered_groups()` applies regex rules against source proxies. Match checks both final and raw names. Empty match = error (422). Supports `copy_nodes` mode that duplicates matched proxies with `[GroupName]` suffix. Group modes: `select`, `fallback`, `url-test`.
+8. **Manual groups** — `build_manual_groups()` does recursive resolution. Members can be filtered groups or other manual groups. Cycle detection at runtime.
+9. **Dialer overrides** — `apply_dialer_overrides()` targets a filtered group and assigns `dialer-proxy` to all proxies in that group. First-match-wins per proxy.
+10. **Route groups + rule-providers** — `build_route_groups_and_rules()`: each binding generates:
+    - A `select` proxy-group: `[default_group, DIRECT] + manual_groups + filtered_groups + [REJECT]`
+    - A `rule-providers` entry pointing to `{request_base_url}/api/public/rules/{rule_id}.yaml`
+    - A `RULE-SET,{provider_key},{binding_name}` rules line
+11. **Final match group** — `build_final_match_group()` creates a `select` proxy-group named "Final" with the user's chosen default target (DIRECT/REJECT/group) as first member, followed by `[DIRECT, manual_groups, filtered_groups, REJECT]` (deduped). Appends `MATCH,Final` as the last rule.
+12. **Proxy filtering** — `filter_and_clean_proxies()` keeps only proxies referenced by any group. Internal `__` keys stripped.
+13. **Merge** — `merge_into_base_yaml()` replaces `proxies`, `proxy-groups`, `rule-providers`, `rules` in base YAML. Other base keys preserved.
 
-Proxy group order in output: filtered_groups -> manual_groups -> route_groups.
+The sync orchestrator `_generate_from_loaded_data()` runs steps 6–13 as pure functions via a `GenerationContext` dataclass. The async `generate_config_yaml()` entry point handles steps 1–5 (DB + refresh enqueueing) then delegates to the sync orchestrator.
+
+Proxy group order in output: filtered_groups → manual_groups → route_groups.
 
 ## API Routes
 
@@ -281,14 +347,16 @@ All routes under `/api`. Admin routes require `Authorization: Bearer <token>`.
 | Method | Path                                              | Purpose                             |
 | ------ | ------------------------------------------------- | ----------------------------------- |
 | GET    | `/api/admin/health`                               | Health + refresh loop status        |
-| GET    | `/api/admin/subscriptions`                        | List subscriptions                  |
+| GET    | `/api/admin/subscriptions`                        | List subscriptions (summary)        |
+| GET    | `/api/admin/subscriptions/{id}`                   | Get subscription (full)             |
 | POST   | `/api/admin/subscriptions`                        | Create subscription                 |
 | PUT    | `/api/admin/subscriptions/{id}`                   | Update subscription                 |
 | POST   | `/api/admin/subscriptions/{id}/refresh`           | Sync refresh                        |
 | POST   | `/api/admin/subscriptions/{id}/refresh-async`     | Async refresh                       |
 | DELETE | `/api/admin/subscriptions/{id}`                   | Delete subscription                 |
 | PUT    | `/api/admin/subscriptions/reorder`                | Bulk reorder subscriptions          |
-| GET    | `/api/admin/rules`                                | List rules                          |
+| GET    | `/api/admin/rules`                                | List rules (summary)                |
+| GET    | `/api/admin/rules/{id}`                           | Get rule (full)                     |
 | POST   | `/api/admin/rules`                                | Create rule                         |
 | PUT    | `/api/admin/rules/{id}`                           | Update rule                         |
 | POST   | `/api/admin/rules/{id}/refresh`                   | Sync refresh                        |
@@ -333,7 +401,7 @@ MainConfig fields:
   test_url: str | None, test_interval_sec: int | None
   route_template_id: str | None
   slot_mappings: [{slot_name, group_name}]
-  filtered_groups: [{name, position, group_mode, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
+  filtered_groups: [{name, position, group_mode, copy_nodes, rules: [{subscription_source_id, regex_pattern, regex_flags, position}]}]
   manual_groups: [{name, position, group_mode, members: [{member_type, member_ref, position}]}]
   dialer_override_rules: [{filtered_group_name, dialer_group_name}]
 
@@ -364,11 +432,13 @@ GenerationInput:
 # RouteBindingPayload (internal, produced by resolve_route_bindings at generation time)
   position, binding_name, rule_source_id, default_group_name, no_resolve
 
-# Type enums
+# Type enums (defined in schemas/common.py)
+SourceMode: "remote" | "manual"
 GroupMode: "select" | "fallback" | "url-test"
 MemberType: "filtered_group" | "manual_group"
 FinalTargetType: "DIRECT" | "REJECT" | "group"
 RuleBehavior: "classical" | "domain" | "ipcidr"
+LastStatus: "never" | "ok" | "error"
 ```
 
 ## Environment Variables (`backend/app/config.py`)
@@ -379,6 +449,7 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 | `DATABASE_URL`             | `sqlite+aiosqlite:///./db.sqlite3`     |                                   |
 | `API_PREFIX`               | `/api`                                 |                                   |
 | `CORS_ORIGINS`             | `["http://localhost:3000", ...]`       |                                   |
+| `SQL_ECHO`                 | `false`                                | SQLAlchemy query logging          |
 | `REFRESH_LOOP_TICK_SEC`    | `15`                                   | Background refresh check interval |
 | `REQUEST_TIMEOUT_SEC`      | `30.0`                                 | HTTP fetch timeout                |
 | `MIN_REFRESH_INTERVAL_SEC` | `60`                                   | Clamp for auto-update interval    |
@@ -389,7 +460,7 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 ## Background Refresh
 
 - In-process async loop ticks every `REFRESH_LOOP_TICK_SEC` seconds.
-- Finds remote + enabled + auto_update sources where `next_refresh_at <= now()`.
+- Finds remote + enabled + auto_update sources where `next_refresh_at <= now()` via repository `get_due_ids()`.
 - Deduplicates concurrent refreshes per source ID via inflight sets.
 - Jitter: `interval * uniform(0.9, 1.1)`, minimum 1 second.
 - On failure: existing cache preserved, error recorded, next refresh scheduled.
@@ -398,10 +469,11 @@ RuleBehavior: "classical" | "domain" | "ipcidr"
 
 - Auth: token in `localStorage` key `sub_manager_admin_token`. Axios interceptor adds bearer header.
 - Routes: `/login`, `/subscriptions`, `/rules`, `/routes`, `/configs` (guarded).
-- Builder editor: `MainConfigEditorDrawer.tsx` - visual form with collapsible sections for filtered groups, manual groups, dialer overrides, and route template selection with slot mappings.
-- Drag-and-drop: `@dnd-kit/core` + `@dnd-kit/sortable` for reordering. Top-level card grids use `rectSortingStrategy`; form lists use `verticalListSortingStrategy` with isolated `DndContext` per nested list.
+- Builder editor: `MainConfigEditorDrawer.tsx` — visual form with collapsible sections for filtered groups (with live regex matching preview), manual groups, dialer overrides, and route template selection with slot mappings.
+- Drag-and-drop: `@dnd-kit/core` + `@dnd-kit/sortable` for reordering. Top-level card grids use `rectSortingStrategy`; form lists use `verticalListSortingStrategy` with isolated `DndContext` per nested list. Insert-above/below buttons on all sortable form lists.
+- Utilities: `format.ts` (byte formatting, traffic colors), `time.ts` (relative time display), `download.ts` (file download via Blob).
 - Frontend dev proxy: Vite proxies `/api` to `http://localhost:5678`.
-- Path alias: `@` -> `frontend/src/`.
+- Path alias: `@` → `frontend/src/`.
 
 ## Known Gaps / Technical Notes
 
