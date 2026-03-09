@@ -115,7 +115,7 @@ Rule payloads referenced in the config's `rule-providers` section point back to 
 | Layer    | Stack                                                  |
 | -------- | ------------------------------------------------------ |
 | Backend  | FastAPI + async SQLAlchemy + aiosqlite, Python >= 3.13 |
-| Frontend | React 19 + Vite 7 + Ant Design 6 + TypeScript 5.9     |
+| Frontend | React 19 + Vite 7 + shadcn/ui + Tailwind CSS 4 + TypeScript 5.9 |
 | Database | SQLite (single file `backend/db.sqlite3`)              |
 | Auth     | Static bearer token (admin)                            |
 | Deploy   | Docker (multi-stage build, single container)           |
@@ -180,10 +180,14 @@ backend/
     test_migration.py
 
 frontend/
-  vite.config.ts                   # port 3000, /api proxy -> :5678, @ alias -> src/
+  vite.config.ts                   # port 3000, /api proxy -> :5678, Tailwind + tsconfig-paths plugins
+  components.json                  # shadcn/ui config (base-nova style, neutral base color)
   src/
-    main.tsx                       # app bootstrap, Ant Design theme, router
-    App.tsx                        # shell, guarded routing, navigation
+    main.tsx                       # app bootstrap, theme provider, router, toast
+    App.tsx                        # route guard + sidebar layout
+    index.css                      # Tailwind CSS v4 imports, oklch theme variables, dark mode
+    lib/
+      utils.ts                     # cn() helper (clsx + tailwind-merge)
     utils/
       api.ts                       # axios instance + bearer interceptor + token storage
       download.ts                  # file download utility (Blob + click simulation)
@@ -191,17 +195,24 @@ frontend/
       time.ts                      # formatRelativeTime
     types/api.ts                   # TS interfaces matching backend schemas
     hooks/
-      useIsMobile.ts               # responsive breakpoint hook
+      use-mobile.ts                # responsive breakpoint hook (768px)
     components/
+      ui/                          # shadcn/ui components (@base-ui/react primitives)
+        button, card, dialog, sheet, input, textarea, label, select, switch,
+        alert, badge, skeleton, scroll-area, collapsible, popover, confirm-popover,
+        tooltip, dropdown-menu, breadcrumb, separator, sidebar, sonner
       CardGrid.tsx                 # reusable card grid with optional drag-and-drop reorder
-      icons/                       # custom SVG icon components
-        InsertAboveOutlined.tsx
-        InsertBelowOutlined.tsx
+      app-sidebar.tsx              # navigation sidebar
+      site-header.tsx              # page header with title
+      theme-provider.tsx           # dark/light mode provider (next-themes)
+      mode-toggle.tsx              # theme switcher button
+      icons/
+        index.tsx                  # custom SVG icons (InsertAbove, InsertBelow)
       dnd/                         # @dnd-kit drag-and-drop primitives
         DragHandle.tsx             # grab-handle icon with forwarded ref
         SortableItem.tsx           # useSortable wrapper, render-prop for drag handle
         SortableWrapper.tsx        # DndContext + SortableContext + sensors
-        SortableFormList.tsx       # adapter for Ant Design Form.List + dnd-kit
+        SortableFormList.tsx       # sortable list with add/insert/remove controls
     pages/
       Login.tsx
       Subscriptions.tsx            # subscription CRUD UI
@@ -467,13 +478,20 @@ LastStatus: "never" | "ok" | "error"
 
 ## Frontend Patterns
 
-- Auth: token in `localStorage` key `sub_manager_admin_token`. Axios interceptor adds bearer header.
-- Routes: `/login`, `/subscriptions`, `/rules`, `/routes`, `/configs` (guarded).
-- Builder editor: `MainConfigEditorDrawer.tsx` — visual form with collapsible sections for filtered groups (with live regex matching preview), manual groups, dialer overrides, and route template selection with slot mappings. Includes "Import from config" to copy all builder fields (except name/enabled) from an existing config.
-- Drag-and-drop: `@dnd-kit/core` + `@dnd-kit/sortable` for reordering. Top-level card grids use `rectSortingStrategy`; form lists use `verticalListSortingStrategy` with isolated `DndContext` per nested list. Insert-above/below buttons on all sortable form lists.
-- Utilities: `format.ts` (byte formatting, traffic colors), `time.ts` (relative time display), `download.ts` (file download via Blob).
-- Frontend dev proxy: Vite proxies `/api` to `http://localhost:5678`.
-- Path alias: `@` → `frontend/src/`.
+- **UI framework**: shadcn/ui (base-nova style) built on `@base-ui/react` headless primitives, styled with Tailwind CSS v4. Components use `data-slot` attributes and CVA (class-variance-authority) for variants.
+- **Styling**: Tailwind CSS v4 with CSS-first `@theme inline` configuration in `index.css`. Design tokens use oklch color space with CSS variables. Semantic colors: primary, secondary, muted, accent, destructive. `cn()` utility (clsx + tailwind-merge) for class merging.
+- **Theming**: Dark/light mode via `next-themes` (`ThemeProvider` + `.dark` class). Geist Variable font family.
+- **Layout**: Sidebar-based navigation (`app-sidebar.tsx`) with site header. Route guard in `App.tsx` redirects to `/login` if not authenticated.
+- **Auth**: Token in `localStorage` key `sub_manager_admin_token`. Axios interceptor adds bearer header.
+- **Routes**: `/login`, `/subscriptions`, `/rules`, `/routes`, `/configs` (guarded).
+- **Forms**: `react-hook-form` with `Controller` for custom components + `@hookform/resolvers` with `zod` for schema validation.
+- **Toast notifications**: `sonner` for all mutation feedback (success/error).
+- **Code editor**: `@monaco-editor/react` + `monaco-yaml` for YAML editing in the builder.
+- **Builder editor**: `MainConfigEditorDrawer.tsx` — visual form with collapsible sections for filtered groups (with live regex matching preview), manual groups, dialer overrides, and route template selection with slot mappings. Includes "Import from config" to copy all builder fields (except name/enabled) from an existing config.
+- **Drag-and-drop**: `@dnd-kit/core` + `@dnd-kit/sortable` for reordering. Top-level card grids use `rectSortingStrategy`; form lists use `verticalListSortingStrategy` with isolated `DndContext` per nested list. Insert-above/below buttons on all sortable form lists.
+- **Utilities**: `format.ts` (byte formatting, traffic colors), `time.ts` (relative time display), `download.ts` (file download via Blob).
+- **Frontend dev proxy**: Vite proxies `/api` to `http://localhost:5678`.
+- **Path alias**: `@` → `frontend/src/`.
 
 ## Known Gaps / Technical Notes
 
