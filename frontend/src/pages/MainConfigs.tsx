@@ -1,81 +1,72 @@
-import {
-  Button,
-  Card,
-  Input,
-  Modal,
-  Popconfirm,
-  Space,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
-import { BlockOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { useEffect, useState } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
+import { toast } from "sonner";
+import { Plus, RefreshCw, Trash2, Pencil, Copy, Eye, Link } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmPopover } from "@/components/ui/confirm-popover";
+import CardGrid from "@/components/CardGrid";
 import MainConfigEditorDrawer from "@/pages/main-configs/MainConfigEditorDrawer";
+import api, { errorDetail } from "@/utils/api";
 import type {
   MainConfig,
-  PreviewResponse,
-  RouteTemplate,
   SubscriptionSourceListItem,
+  RouteTemplate,
+  PreviewResponse,
 } from "@/types/api";
-import api, { errorDetail } from "@/utils/api";
-import useIsMobile from "@/hooks/useIsMobile";
-import CardGrid from "@/components/CardGrid";
+
+type EditorMode = "create" | "edit" | "duplicate";
 
 export default function MainConfigsPage() {
-  const isMobile = useIsMobile();
   const [items, setItems] = useState<MainConfig[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionSourceListItem[]>([]);
   const [routeTemplates, setRouteTemplates] = useState<RouteTemplate[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MainConfig | null>(null);
-  const [editorMode, setEditorMode] = useState<"create" | "edit" | "duplicate">("create");
+  const [editorMode, setEditorMode] = useState<EditorMode>("create");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewYaml, setPreviewYaml] = useState("");
-  const [previewDiagnostics, setPreviewDiagnostics] =
-    useState<PreviewResponse["diagnostics"] | null>(null);
+  const [previewDiagnostics, setPreviewDiagnostics] = useState<PreviewResponse["diagnostics"] | null>(null);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [configsResponse, subscriptionsResponse, routeTemplatesResponse] = await Promise.all([
+      const [configsRes, subsRes, templatesRes] = await Promise.all([
         api.get<MainConfig[]>("/admin/main-configs"),
         api.get<SubscriptionSourceListItem[]>("/admin/subscriptions"),
         api.get<RouteTemplate[]>("/admin/route-templates"),
       ]);
-
-      setItems(configsResponse.data);
-      setSubscriptions(subscriptionsResponse.data);
-      setRouteTemplates(routeTemplatesResponse.data);
-    } catch (error) {
-      void message.error(errorDetail(error));
+      setItems(configsRes.data);
+      setSubscriptions(subsRes.data);
+      setRouteTemplates(templatesRes.data);
+    } catch (err) {
+      toast.error(errorDetail(err));
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void fetchAll();
   }, []);
 
+  useEffect(() => { void fetchAll(); }, [fetchAll]);
+
   const openCreate = () => {
-    setEditing(null);
     setEditorMode("create");
+    setEditing(null);
     setEditorOpen(true);
   };
 
   const openEdit = (item: MainConfig) => {
-    setEditing(item);
     setEditorMode("edit");
+    setEditing(item);
     setEditorOpen(true);
   };
 
   const openDuplicate = (item: MainConfig) => {
-    setEditing(item);
     setEditorMode("duplicate");
+    setEditing(item);
     setEditorOpen(true);
   };
 
@@ -84,34 +75,30 @@ export default function MainConfigsPage() {
     setEditing(null);
   };
 
-  const handleDelete = async (item: MainConfig) => {
-    try {
-      await api.delete(`/admin/main-configs/${item.id}`);
-      void message.success("Main config deleted");
-      await fetchAll();
-    } catch (error) {
-      void message.error(errorDetail(error));
-    }
-  };
-
   const handlePreview = async (item: MainConfig) => {
     try {
-      const response = await api.post<PreviewResponse>(`/admin/main-configs/${item.id}/preview`);
-      setPreviewYaml(response.data.yaml);
-      setPreviewDiagnostics(response.data.diagnostics);
+      const res = await api.post<PreviewResponse>(`/admin/main-configs/${item.id}/preview`);
+      setPreviewYaml(res.data.yaml);
+      setPreviewDiagnostics(res.data.diagnostics);
       setPreviewOpen(true);
-    } catch (error) {
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
     }
   };
 
   const handleCopyArtifactLink = async (item: MainConfig) => {
     const link = `${window.location.origin}/api/public/configs/${item.id}/artifact`;
+    await navigator.clipboard.writeText(link);
+    toast.success("Link copied to clipboard");
+  };
+
+  const handleDelete = async (item: MainConfig) => {
     try {
-      await navigator.clipboard.writeText(link);
-      void message.success("Artifact URL copied");
-    } catch {
-      void message.error("Copy failed");
+      await api.delete(`/admin/main-configs/${item.id}`);
+      toast.success("Deleted");
+      await fetchAll();
+    } catch (err) {
+      toast.error(errorDetail(err));
     }
   };
 
@@ -120,65 +107,72 @@ export default function MainConfigsPage() {
     setItems(reordered);
     try {
       await api.put("/admin/main-configs/reorder", {
-        items: reordered.map((item, i) => ({ id: item.id, position: i })),
+        items: reordered.map((item, i) => ({ id: item.id, position: i + 1 })),
       });
-    } catch (error) {
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
       await fetchAll();
     }
   };
 
-  const renderCard = (item: MainConfig, dragHandle: React.ReactNode) => (
-    <Card
-      size="small"
-
-      title={item.name}
-      extra={
-        <Space>
+  const renderCard = (item: MainConfig, dragHandle: ReactNode) => (
+    <Card key={item.id} className="flex flex-col">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
           {dragHandle}
-          <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
-          </Tooltip>
-          <Tooltip title="Duplicate">
-            <Button size="small" icon={<BlockOutlined />} onClick={() => openDuplicate(item)} />
-          </Tooltip>
-          <Tooltip title="Preview">
-            <Button size="small" icon={<EyeOutlined />} onClick={() => void handlePreview(item)} />
-          </Tooltip>
-          <Tooltip title="Copy URL">
-            <Button size="small" icon={<CopyOutlined />} onClick={() => void handleCopyArtifactLink(item)} />
-          </Tooltip>
-          <Popconfirm title="Delete this main config?" onConfirm={() => void handleDelete(item)}>
-            <Tooltip title="Delete">
-              <Button size="small" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
-        </Space>
-      }
-    >
-      <Space wrap size={4}>
-        <Tag color="blue">
-          {item.final_target_type === "group"
-            ? item.final_target_group_name ?? "group"
-            : item.final_target_type}
-        </Tag>
-        <Tag color={item.enabled ? "success" : "default"}>{item.enabled ? "on" : "off"}</Tag>
-      </Space>
+          <CardTitle className="text-base flex-1 truncate">{item.name}</CardTitle>
+        </div>
+        <div className="flex flex-wrap gap-1 mt-1">
+          <Badge variant="outline" className="border-blue-400 text-blue-600">
+            {item.final_target_type === "group" ? item.final_target_group_name : item.final_target_type}
+          </Badge>
+          <Badge variant={item.enabled ? "default" : "secondary"} className={item.enabled ? "bg-green-600" : ""}>
+            {item.enabled ? "on" : "off"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1">
+        <div className="flex flex-wrap gap-1 pt-2">
+          <Button variant="outline" size="sm" title="Edit" onClick={() => openEdit(item)}>
+            <Pencil className="h-3 w-3" />
+          </Button>
+          <Button variant="outline" size="sm" title="Duplicate" onClick={() => openDuplicate(item)}>
+            <Copy className="h-3 w-3" />
+          </Button>
+          <Button variant="outline" size="sm" title="Preview" onClick={() => void handlePreview(item)}>
+            <Eye className="h-3 w-3" />
+          </Button>
+          <Button variant="outline" size="sm" title="Copy URL" onClick={() => void handleCopyArtifactLink(item)}>
+            <Link className="h-3 w-3" />
+          </Button>
+          <ConfirmPopover description={`Delete "${item.name}"?`} onConfirm={() => void handleDelete(item)}>
+            <Button variant="destructive" size="sm">
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </ConfirmPopover>
+        </div>
+      </CardContent>
     </Card>
   );
 
   return (
-    <Space direction="vertical" style={{ display: "flex" }} size={16}>
-      <Space>
-        <Tooltip title="New Main Config">
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} />
-        </Tooltip>
-        <Tooltip title="Reload">
-          <Button icon={<ReloadOutlined />} onClick={() => void fetchAll()} />
-        </Tooltip>
-      </Space>
+    <div className="space-y-4">
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={() => void fetchAll()}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+        <Button size="sm" onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-1" /> New Config
+        </Button>
+      </div>
 
-      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} onReorder={handleReorder} />
+      <CardGrid
+        items={items}
+        loading={loading}
+        rowKey={(item) => item.id}
+        renderCard={renderCard}
+        onReorder={handleReorder}
+      />
 
       <MainConfigEditorDrawer
         open={editorOpen}
@@ -191,43 +185,22 @@ export default function MainConfigsPage() {
         onSaved={fetchAll}
       />
 
-      <Modal
-        title="Generated YAML Preview"
-        open={previewOpen}
-        onCancel={() => setPreviewOpen(false)}
-        footer={null}
-        width={isMobile ? "95vw" : 1000}
-        destroyOnHidden
-      >
-        {previewDiagnostics ? (
-          <Space direction="vertical" style={{ display: "flex", marginBottom: 12 }}>
-            <Typography.Text type="secondary">
-              stale subscriptions:{" "}
-              {previewDiagnostics.stale_subscription_ids.length
-                ? previewDiagnostics.stale_subscription_ids.join(", ")
-                : "none"}
-            </Typography.Text>
-            <Typography.Text type="secondary">
-              stale rules:{" "}
-              {previewDiagnostics.stale_rule_ids.length
-                ? previewDiagnostics.stale_rule_ids.join(", ")
-                : "none"}
-            </Typography.Text>
-            <Typography.Text type="secondary">
-              warnings:{" "}
-              {previewDiagnostics.warnings.length
-                ? previewDiagnostics.warnings.join(" | ")
-                : "none"}
-            </Typography.Text>
-          </Space>
-        ) : null}
-        <Input.TextArea
-          value={previewYaml}
-          rows={26}
-          readOnly
-          style={{ fontFamily: "monospace" }}
-        />
-      </Modal>
-    </Space>
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Config Preview</DialogTitle>
+          </DialogHeader>
+          {previewDiagnostics && (
+            <div className="space-y-1 text-sm">
+              <div><span className="font-medium">Stale subscriptions:</span> {previewDiagnostics.stale_subscription_ids.length > 0 ? previewDiagnostics.stale_subscription_ids.join(", ") : "none"}</div>
+              <div><span className="font-medium">Stale rules:</span> {previewDiagnostics.stale_rule_ids.length > 0 ? previewDiagnostics.stale_rule_ids.join(", ") : "none"}</div>
+              <div><span className="font-medium">Warnings:</span> {previewDiagnostics.warnings.length > 0 ? previewDiagnostics.warnings.join("; ") : "none"}</div>
+            </div>
+          )}
+          <Textarea readOnly rows={26} value={previewYaml} className="font-mono text-xs" />
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

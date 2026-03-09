@@ -1,39 +1,35 @@
-import {
-  Button,
-  Card,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
-import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, GithubOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
-import { useEffect, useState } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
-import yaml from "js-yaml";
-import type { RuleSource, RuleSourceListItem } from "@/types/api";
+import * as yaml from "js-yaml";
+import { toast } from "sonner";
+import { Plus, RefreshCw, Eye, Download, Trash2, Pencil, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ConfirmPopover } from "@/components/ui/confirm-popover";
+import CardGrid from "@/components/CardGrid";
 import api, { errorDetail } from "@/utils/api";
 import { formatRelativeTime } from "@/utils/time";
 import { downloadTextFile } from "@/utils/download";
-import useIsMobile from "@/hooks/useIsMobile";
-import CardGrid from "@/components/CardGrid";
+import type { RuleSource, RuleSourceListItem } from "@/types/api";
+import { useForm, Controller } from "react-hook-form";
 
 type RuleFormValues = {
   name: string;
   mode: "remote" | "manual";
   behavior: "classical" | "domain" | "ipcidr";
   enabled: boolean;
-  remote_url?: string;
-  auto_update?: boolean;
-  update_interval_sec?: number;
-  payload_lines_text?: string;
+  remote_url: string;
+  auto_update: boolean;
+  update_interval_sec: number;
+  payload_lines_text: string;
 };
 
 const defaultFormValues: RuleFormValues = {
@@ -48,210 +44,180 @@ const defaultFormValues: RuleFormValues = {
 };
 
 function linesTextToArray(text: string | undefined): string[] {
-  if (!text) {
-    return [];
-  }
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  if (!text) return [];
+  return text.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+}
+
+const behaviorPlaceholders: Record<string, string> = {
+  classical: "DOMAIN-SUFFIX,google.com\nDOMAIN-KEYWORD,google\nDOMAIN,ad.com\nSRC-IP-CIDR,192.168.1.201/32\nIP-CIDR,127.0.0.0/8\nGEOIP,CN\nDST-PORT,80\nSRC-PORT,7777\nIP-CIDR,1.1.1.1/32,no-resolve",
+  domain: ".google.com\n+.youtube.com\n*.github.com\nexample.com\n\nWildcards:\n*  matches one level only\n+  matches like DOMAIN-SUFFIX\n.  matches subdomains only",
+  ipcidr: "192.168.1.0/24\n10.0.0.1/32",
+};
+
+function hasCachedPayload(item: RuleSourceListItem): boolean {
+  return item.cached_payload_lines_count != null && item.cached_payload_lines_count > 0;
 }
 
 export default function RulesPage() {
-  const isMobile = useIsMobile();
   const [items, setItems] = useState<RuleSourceListItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RuleSourceListItem | null>(null);
-  const [form] = Form.useForm<RuleFormValues>();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState("");
   const [previewTitle, setPreviewTitle] = useState("");
 
-  const mode = Form.useWatch("mode", form);
-  const behavior = Form.useWatch("behavior", form);
+  const form = useForm<RuleFormValues>({ defaultValues: defaultFormValues });
+  const mode = form.watch("mode");
+  const behavior = form.watch("behavior");
 
-  const behaviorPlaceholders: Record<string, string> = {
-    classical: [
-      "DOMAIN-SUFFIX,google.com",
-      "DOMAIN-KEYWORD,google",
-      "DOMAIN,ad.com",
-      "SRC-IP-CIDR,192.168.1.201/32",
-      "IP-CIDR,127.0.0.0/8",
-      "GEOIP,CN",
-      "DST-PORT,80",
-      "SRC-PORT,7777",
-      "IP-CIDR,1.1.1.1/32,no-resolve",
-    ].join("\n"),
-    domain: [
-      ".google.com",
-      "+.youtube.com",
-      "*.github.com",
-      "example.com",
-      "",
-      "Wildcards:",
-      "*  matches one level only (*.a.com -> b.a.com, not c.b.a.com)",
-      "+  matches like DOMAIN-SUFFIX (+.a.com -> b.a.com and c.b.a.com and a.com)",
-      ".  matches subdomains only (.a.com -> b.a.com and c.b.a.com, not a.com)",
-    ].join("\n"),
-    ipcidr: ["192.168.1.0/24", "10.0.0.1/32"].join("\n"),
-  };
-
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await api.get<RuleSourceListItem[]>("/admin/rules");
-      setItems(response.data);
-    } catch (error) {
-      void message.error(errorDetail(error));
+      const res = await api.get<RuleSourceListItem[]>("/admin/rules");
+      setItems(res.data);
+    } catch (err) {
+      toast.error(errorDetail(err));
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void fetchItems();
   }, []);
+
+  useEffect(() => { void fetchItems(); }, [fetchItems]);
+
+  const fetchFullItem = async (id: string): Promise<RuleSource> => {
+    const res = await api.get<RuleSource>(`/admin/rules/${id}`);
+    return res.data;
+  };
 
   const openCreate = () => {
     setEditing(null);
-    form.setFieldsValue(defaultFormValues);
+    form.reset(defaultFormValues);
     setOpen(true);
   };
 
   const openEdit = async (item: RuleSourceListItem) => {
+    setEditing(item);
     if (item.mode === "manual") {
       try {
-        const response = await api.get<RuleSource>(`/admin/rules/${item.id}`);
-        const full = response.data;
-        setEditing(item);
-        form.setFieldsValue({
-          name: full.name,
-          mode: full.mode,
-          behavior: full.behavior,
-          enabled: full.enabled,
-          remote_url: full.remote_url ?? "",
-          auto_update: full.auto_update,
-          update_interval_sec: full.update_interval_sec,
-          payload_lines_text: (full.cached_payload_lines_json ?? []).join("\n"),
+        const full = await fetchFullItem(item.id);
+        form.reset({
+          name: item.name,
+          mode: item.mode,
+          behavior: item.behavior,
+          enabled: item.enabled,
+          remote_url: item.remote_url ?? "",
+          auto_update: item.auto_update,
+          update_interval_sec: item.update_interval_sec,
+          payload_lines_text: full.cached_payload_lines_json?.join("\n") ?? "",
         });
-        setOpen(true);
-      } catch (error) {
-        void message.error(errorDetail(error));
+      } catch (err) {
+        toast.error(errorDetail(err));
+        return;
       }
-      return;
+    } else {
+      form.reset({
+        name: item.name,
+        mode: item.mode,
+        behavior: item.behavior,
+        enabled: item.enabled,
+        remote_url: item.remote_url ?? "",
+        auto_update: item.auto_update,
+        update_interval_sec: item.update_interval_sec,
+        payload_lines_text: "",
+      });
     }
-    setEditing(item);
-    form.setFieldsValue({
-      name: item.name,
-      mode: item.mode,
-      behavior: item.behavior,
-      enabled: item.enabled,
-      remote_url: item.remote_url ?? "",
-      auto_update: item.auto_update,
-      update_interval_sec: item.update_interval_sec,
-      payload_lines_text: "",
-    });
     setOpen(true);
+  };
+
+  const onSubmit = async (values: RuleFormValues) => {
+    try {
+      const payload: Record<string, unknown> = {
+        name: values.name,
+        mode: values.mode,
+        behavior: values.behavior,
+        enabled: values.enabled,
+      };
+      if (values.mode === "remote") {
+        payload.remote_url = values.remote_url;
+        payload.auto_update = values.auto_update;
+        payload.update_interval_sec = values.update_interval_sec;
+      } else {
+        payload.payload_lines = linesTextToArray(values.payload_lines_text);
+      }
+
+      let savedId: string;
+      const isNew = !editing;
+      const urlChanged = editing && values.mode === "remote" && values.remote_url !== (editing.remote_url ?? "");
+
+      if (editing) {
+        const res = await api.put<RuleSource>(`/admin/rules/${editing.id}`, payload);
+        savedId = res.data.id;
+      } else {
+        const res = await api.post<RuleSource>("/admin/rules", payload);
+        savedId = res.data.id;
+      }
+
+      const shouldRefresh = values.mode === "remote" && (isNew || urlChanged);
+      if (shouldRefresh) {
+        try {
+          await api.post(`/admin/rules/${savedId}/refresh`);
+          toast.success(editing ? "Updated & refreshed" : "Created & refreshed");
+        } catch (refreshErr) {
+          toast.warning(`${editing ? "Updated" : "Created"}, but refresh failed: ${errorDetail(refreshErr)}`);
+        }
+      } else {
+        toast.success(editing ? "Updated" : "Created");
+      }
+
+      setOpen(false);
+      await fetchItems();
+    } catch (err) {
+      toast.error(errorDetail(err));
+    }
   };
 
   const handleDelete = async (item: RuleSourceListItem) => {
     try {
       await api.delete(`/admin/rules/${item.id}`);
-      void message.success("Deleted");
+      toast.success("Deleted");
       await fetchItems();
-    } catch (error) {
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
     }
   };
 
   const handleRefresh = async (item: RuleSourceListItem) => {
     try {
       await api.post(`/admin/rules/${item.id}/refresh`);
-      void message.success("Refreshed");
+      toast.success("Refreshed");
       await fetchItems();
-    } catch (error) {
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
     }
-  };
-
-  const hasCachedPayload = (item: RuleSourceListItem) =>
-    item.cached_payload_lines_count != null && item.cached_payload_lines_count > 0;
-
-  const payloadToText = (item: RuleSource) =>
-    yaml.dump({ payload: item.cached_payload_lines_json }, { lineWidth: -1 });
-
-  const fetchFullItem = async (id: string): Promise<RuleSource> => {
-    const response = await api.get<RuleSource>(`/admin/rules/${id}`);
-    return response.data;
   };
 
   const openPreview = async (item: RuleSourceListItem) => {
     try {
       const full = await fetchFullItem(item.id);
-      setPreviewContent(payloadToText(full));
-      setPreviewTitle(`${item.name} — Rules`);
+      setPreviewTitle(item.name);
+      setPreviewContent(yaml.dump({ payload: full.cached_payload_lines_json }, { lineWidth: -1 }));
       setPreviewOpen(true);
-    } catch (error) {
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
     }
   };
 
   const handleDownload = async (item: RuleSourceListItem) => {
     try {
       const full = await fetchFullItem(item.id);
-      downloadTextFile(payloadToText(full), `${item.name}_rules.yaml`, "application/x-yaml");
-    } catch (error) {
-      void message.error(errorDetail(error));
-    }
-  };
-
-  const handleSubmit = async () => {
-    try {
-      const values = await form.validateFields();
-      const payload: Record<string, unknown> = {
-        name: values.name,
-        mode: values.mode,
-        behavior: values.behavior,
-        enabled: values.enabled,
-        remote_url: values.remote_url,
-        auto_update: values.auto_update,
-        update_interval_sec: values.update_interval_sec,
-      };
-
-      if (values.mode === "manual") {
-        payload.payload_lines = linesTextToArray(values.payload_lines_text);
-      }
-
-      let savedId: string | null = null;
-      let needsRefresh = false;
-
-      if (editing) {
-        await api.put(`/admin/rules/${editing.id}`, payload);
-        savedId = editing.id;
-        needsRefresh = values.mode === "remote" && values.remote_url !== editing.remote_url;
-      } else {
-        const res = await api.post<RuleSource>("/admin/rules", payload);
-        savedId = res.data.id;
-        needsRefresh = values.mode === "remote";
-      }
-
-      setOpen(false);
-      await fetchItems();
-
-      if (needsRefresh && savedId) {
-        try {
-          await api.post(`/admin/rules/${savedId}/refresh`);
-          await fetchItems();
-          void message.success(editing ? "Updated & refreshed" : "Created & refreshed");
-        } catch (refreshError) {
-          void message.warning(`${editing ? "Updated" : "Created"}, but refresh failed: ${errorDetail(refreshError)}`);
-        }
-      } else {
-        void message.success(editing ? "Updated" : "Created");
-      }
-    } catch (error) {
-      void message.error(errorDetail(error));
+      downloadTextFile(
+        yaml.dump({ payload: full.cached_payload_lines_json }, { lineWidth: -1 }),
+        `${item.name}_rules.yaml`,
+        "text/yaml"
+      );
+    } catch (err) {
+      toast.error(errorDetail(err));
     }
   };
 
@@ -260,173 +226,201 @@ export default function RulesPage() {
     setItems(reordered);
     try {
       await api.put("/admin/rules/reorder", {
-        items: reordered.map((item, i) => ({ id: item.id, position: i })),
+        items: reordered.map((item, i) => ({ id: item.id, position: i + 1 })),
       });
-    } catch (error) {
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
       await fetchItems();
     }
   };
 
-  const renderCard = (item: RuleSourceListItem, dragHandle: React.ReactNode) => (
-    <Card
-      size="small"
-
-      title={item.name}
-      extra={
-        <Space>
+  const renderCard = (item: RuleSourceListItem, dragHandle: ReactNode) => (
+    <Card key={item.id} className="flex flex-col">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
           {dragHandle}
-          <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => void openEdit(item)} />
-          </Tooltip>
-          <Tooltip title="Refresh">
-            <Button size="small" icon={<SyncOutlined />} onClick={() => void handleRefresh(item)} />
-          </Tooltip>
-          <Tooltip title="Preview">
-            <Button size="small" icon={<EyeOutlined />} disabled={!hasCachedPayload(item)} onClick={() => void openPreview(item)} />
-          </Tooltip>
-          <Tooltip title="Download">
-            <Button size="small" icon={<DownloadOutlined />} disabled={!hasCachedPayload(item)} onClick={() => void handleDownload(item)} />
-          </Tooltip>
-          <Popconfirm title="Delete rule?" onConfirm={() => void handleDelete(item)}>
-            <Tooltip title="Delete">
-              <Button size="small" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
-        </Space>
-      }
-    >
-      <Space direction="vertical" size={4} style={{ display: "flex" }}>
-        <Space wrap size={4}>
-          <Tag>{item.mode}</Tag>
-          <Tag color="blue">{item.behavior}</Tag>
-          <Tag color={item.last_status === "ok" ? "success" : item.last_status === "error" ? "error" : "default"}>
+          <CardTitle className="text-base flex-1 truncate">{item.name}</CardTitle>
+        </div>
+        <div className="flex flex-wrap gap-1 mt-1">
+          <Badge variant="outline">{item.mode}</Badge>
+          <Badge variant="outline" className="border-blue-400 text-blue-600">{item.behavior}</Badge>
+          <Badge
+            variant={item.last_status === "ok" ? "default" : item.last_status === "error" ? "destructive" : "secondary"}
+            className={item.last_status === "ok" ? "bg-green-600" : ""}
+          >
             {item.last_status}
-          </Tag>
-          {item.cached_payload_lines_count != null && item.cached_payload_lines_count > 0 && (
-            <Tag>{item.cached_payload_lines_count} rules</Tag>
+          </Badge>
+          {hasCachedPayload(item) && (
+            <Badge variant="secondary">{item.cached_payload_lines_count} rules</Badge>
           )}
-        </Space>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Last:{" "}
-          {item.last_refresh_at ? (
-            <Tooltip title={new Date(item.last_refresh_at).toLocaleString()}>
-              <span>{formatRelativeTime(item.last_refresh_at)}</span>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 space-y-2 text-sm">
+        {item.last_refresh_at && (
+          <div className="text-muted-foreground">
+            <Tooltip>
+              <TooltipTrigger>
+                <span>Refreshed: {formatRelativeTime(item.last_refresh_at)}</span>
+              </TooltipTrigger>
+              <TooltipContent>{new Date(item.last_refresh_at).toLocaleString()}</TooltipContent>
             </Tooltip>
-          ) : "-"}
-          {" / Next: "}
-          {item.next_refresh_at ? (
-            <Tooltip title={new Date(item.next_refresh_at).toLocaleString()}>
-              <span>{formatRelativeTime(item.next_refresh_at)}</span>
+          </div>
+        )}
+        {item.next_refresh_at && (
+          <div className="text-muted-foreground">
+            <Tooltip>
+              <TooltipTrigger>
+                <span>Next: {formatRelativeTime(item.next_refresh_at)}</span>
+              </TooltipTrigger>
+              <TooltipContent>{new Date(item.next_refresh_at).toLocaleString()}</TooltipContent>
             </Tooltip>
-          ) : "-"}
-        </Typography.Text>
-      </Space>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-1 pt-2">
+          <Button variant="outline" size="sm" title="Edit" onClick={() => void openEdit(item)}>
+            <Pencil className="h-3 w-3" />
+          </Button>
+          {item.mode === "remote" && (
+            <Button variant="outline" size="sm" title="Refresh" onClick={() => void handleRefresh(item)}>
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          )}
+          <Button variant="outline" size="sm" title="Preview" disabled={!hasCachedPayload(item)} onClick={() => void openPreview(item)}>
+            <Eye className="h-3 w-3" />
+          </Button>
+          <Button variant="outline" size="sm" title="Download" disabled={!hasCachedPayload(item)} onClick={() => void handleDownload(item)}>
+            <Download className="h-3 w-3" />
+          </Button>
+          <ConfirmPopover description={`Delete "${item.name}"?`} onConfirm={() => void handleDelete(item)}>
+            <Button variant="destructive" size="sm">
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </ConfirmPopover>
+        </div>
+      </CardContent>
     </Card>
   );
 
   return (
-    <Space direction="vertical" style={{ display: "flex" }} size={16}>
-      <Space>
-        <Tooltip title="New Rule">
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} />
-        </Tooltip>
-        <Tooltip title="Reload">
-          <Button icon={<ReloadOutlined />} onClick={() => void fetchItems()} />
-        </Tooltip>
-        <Tooltip title="GeoSite Rules">
-          <Button
-            icon={<GithubOutlined />}
-            href="https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite"
-            target="_blank"
-          />
-        </Tooltip>
-      </Space>
+    <div className="space-y-4">
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={() => void fetchItems()}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+        <a href="https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite" target="_blank" rel="noreferrer">
+          <Button variant="outline" size="sm">
+            <ExternalLink className="h-4 w-4 mr-1" /> GeoSite Rules
+          </Button>
+        </a>
+        <Button size="sm" onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-1" /> New Rule
+        </Button>
+      </div>
 
-      <CardGrid items={items} loading={loading} rowKey={(item) => item.id} renderCard={renderCard} onReorder={handleReorder} />
+      <CardGrid
+        items={items}
+        loading={loading}
+        rowKey={(item) => item.id}
+        renderCard={renderCard}
+        onReorder={handleReorder}
+      />
 
-      <Modal
-        title={editing ? "Edit Rule" : "Create Rule"}
-        open={open}
-        onCancel={() => setOpen(false)}
-        onOk={() => void handleSubmit()}
-        width={isMobile ? "95vw" : 720}
-        destroyOnHidden
-      >
-        <Form form={form} layout="vertical" initialValues={defaultFormValues}>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}> 
-            <Input />
-          </Form.Item>
+      {/* Create / Edit Dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Rule" : "New Rule"}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input {...form.register("name", { required: "Name is required" })} />
+              {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
+            </div>
 
-          <Form.Item name="mode" label="Mode" rules={[{ required: true }]}> 
-            <Select
-              options={[
-                { label: "Remote", value: "remote" },
-                { label: "Manual", value: "manual" },
-              ]}
-            />
-          </Form.Item>
+            <div className="space-y-2">
+              <Label>Mode</Label>
+              <Controller control={form.control} name="mode" render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="remote">Remote</SelectItem>
+                    <SelectItem value="manual">Manual</SelectItem>
+                  </SelectContent>
+                </Select>
+              )} />
+            </div>
 
-          <Form.Item name="behavior" label="Behavior" rules={[{ required: true }]}> 
-            <Select
-              options={[
-                { label: "classical", value: "classical" },
-                { label: "domain", value: "domain" },
-                { label: "ipcidr", value: "ipcidr" },
-              ]}
-            />
-          </Form.Item>
+            <div className="space-y-2">
+              <Label>Behavior</Label>
+              <Controller control={form.control} name="behavior" render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="classical">classical</SelectItem>
+                    <SelectItem value="domain">domain</SelectItem>
+                    <SelectItem value="ipcidr">ipcidr</SelectItem>
+                  </SelectContent>
+                </Select>
+              )} />
+            </div>
 
-          <Form.Item name="enabled" label="Enabled" valuePropName="checked">
-            <Switch />
-          </Form.Item>
+            <div className="flex items-center gap-2">
+              <Controller control={form.control} name="enabled" render={({ field }) => (
+                <Switch checked={field.value} onCheckedChange={field.onChange} />
+              )} />
+              <Label>Enabled</Label>
+            </div>
 
-          {mode === "remote" ? (
-            <>
-              <Form.Item
-                name="remote_url"
-                label="Remote URL"
-                rules={[{ required: true, message: "remote_url is required" }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item name="auto_update" label="Auto Update" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-              <Form.Item name="update_interval_sec" label="Update Interval (sec)">
-                <InputNumber min={60} style={{ width: "100%" }} />
-              </Form.Item>
-            </>
-          ) : (
-            <Form.Item
-              name="payload_lines_text"
-              label="Payload Lines"
-              rules={[{ required: true, message: "payload lines are required" }]}
-            >
-              <Input.TextArea
-                rows={10}
-                placeholder={behaviorPlaceholders[behavior] ?? behaviorPlaceholders.classical}
-              />
-            </Form.Item>
-          )}
-        </Form>
-      </Modal>
+            {mode === "remote" && (
+              <>
+                <div className="space-y-2">
+                  <Label>Remote URL</Label>
+                  <Input {...form.register("remote_url", { required: "URL is required" })} />
+                  {form.formState.errors.remote_url && <p className="text-sm text-destructive">{form.formState.errors.remote_url.message}</p>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Controller control={form.control} name="auto_update" render={({ field }) => (
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  )} />
+                  <Label>Auto Update</Label>
+                </div>
+                <div className="space-y-2">
+                  <Label>Update Interval (seconds)</Label>
+                  <Input type="number" {...form.register("update_interval_sec", { valueAsNumber: true, min: 60 })} />
+                </div>
+              </>
+            )}
 
-      <Modal
-        title={previewTitle}
-        open={previewOpen}
-        onCancel={() => setPreviewOpen(false)}
-        footer={null}
-        width={isMobile ? "95vw" : 800}
-        destroyOnHidden
-      >
-        <Input.TextArea
-          value={previewContent}
-          readOnly
-          autoSize={{ minRows: 10, maxRows: 30 }}
-          style={{ fontFamily: "monospace" }}
-        />
-      </Modal>
-    </Space>
+            {mode === "manual" && (
+              <div className="space-y-2">
+                <Label>Payload Lines</Label>
+                <Textarea
+                  rows={10}
+                  {...form.register("payload_lines_text", { required: "Payload is required" })}
+                  placeholder={behaviorPlaceholders[behavior] ?? ""}
+                />
+                {form.formState.errors.payload_lines_text && <p className="text-sm text-destructive">{form.formState.errors.payload_lines_text.message}</p>}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-2xl lg:max-w-4xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Preview: {previewTitle}</DialogTitle>
+          </DialogHeader>
+          <Textarea readOnly rows={20} value={previewContent} className="font-mono text-xs" />
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

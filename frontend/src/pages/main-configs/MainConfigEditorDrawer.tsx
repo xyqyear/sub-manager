@@ -1,69 +1,66 @@
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Collapse,
-  Divider,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
-import { CloseOutlined, DeleteOutlined, EyeOutlined, ImportOutlined, PlusOutlined, SaveOutlined } from "@ant-design/icons";
-import { InsertAboveOutlined, InsertBelowOutlined } from "@/components/icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type {
-  FilteredGroupPreviewResponse,
-  GroupMode,
-  MainConfig,
-  PreviewResponse,
-  RouteTemplate,
-  SubscriptionSourceListItem,
-} from "@/types/api";
-import api, { errorDetail } from "@/utils/api";
-import useIsMobile from "@/hooks/useIsMobile";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "sonner";
+import { Plus, Trash2, Import, Eye, AlertTriangle } from "lucide-react";
+import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { ConfirmPopover } from "@/components/ui/confirm-popover";
 import SortableFormList from "@/components/dnd/SortableFormList";
+import { InsertAboveOutlined, InsertBelowOutlined } from "@/components/icons";
+import api, { errorDetail } from "@/utils/api";
+import type {
+  MainConfig,
+  SubscriptionSourceListItem,
+  RouteTemplate,
+  PreviewResponse,
+  FilteredGroupPreviewResponse,
+} from "@/types/api";
 
 type FinalTargetType = "DIRECT" | "REJECT" | "group";
-type ManualMemberType = "filtered_group" | "manual_group";
-
 type EditorMode = "create" | "edit" | "duplicate";
-
-interface MainConfigEditorDrawerProps {
-  open: boolean;
-  config: MainConfig | null;
-  mode: EditorMode;
-  configs: MainConfig[];
-  subscriptions: SubscriptionSourceListItem[];
-  routeTemplates: RouteTemplate[];
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-}
-
-type SlotMappingFormValue = { slot_name: string; group_name: string };
 
 type EditorFormValues = {
   name: string;
   base_config_yaml: string;
   enabled: boolean;
   final_target_type: FinalTargetType;
-  final_target_group_name?: string;
-  test_url?: string;
-  test_interval_sec?: number;
-  route_template_id?: string;
-  slot_mappings: SlotMappingFormValue[];
-} & Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules">;
+  final_target_group_name: string;
+  test_url: string;
+  test_interval_sec: number | undefined;
+  route_template_id: string;
+  slot_mappings: { slot_name: string; group_name: string }[];
+  filtered_groups: {
+    name: string;
+    group_mode: string;
+    copy_nodes: boolean;
+    rules: {
+      subscription_source_id: string;
+      regex_pattern: string;
+      regex_flags: string;
+    }[];
+  }[];
+  manual_groups: {
+    name: string;
+    group_mode: string;
+    members: {
+      member_type: string;
+      member_ref: string;
+    }[];
+  }[];
+  dialer_override_rules: {
+    filtered_group_name: string;
+    dialer_group_name: string;
+  }[];
+};
 
 const DEFAULT_BASE_YAML = "mixed-port: 7890\nmode: rule\n";
 
@@ -78,17 +75,17 @@ const defaultValues: EditorFormValues = {
   filtered_groups: [],
   manual_groups: [],
   dialer_override_rules: [],
-  route_template_id: undefined,
+  route_template_id: "",
   slot_mappings: [],
 };
 
-const groupModeOptions: { label: string; value: GroupMode }[] = [
+const groupModeOptions = [
   { label: "select", value: "select" },
   { label: "fallback", value: "fallback" },
   { label: "url-test", value: "url-test" },
 ];
 
-function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filtered_groups" | "manual_groups" | "dialer_override_rules"> & { test_url: string | null; test_interval_sec: number | null; route_template_id: string | null; slot_mappings: { slot_name: string; group_name: string }[] } {
+function normalizeGroupFields(values: EditorFormValues) {
   return {
     filtered_groups: (values.filtered_groups ?? []).map((group, groupIndex) => ({
       name: group.name,
@@ -126,6 +123,17 @@ function normalizeGroupFields(values: EditorFormValues): Pick<MainConfig, "filte
   };
 }
 
+interface MainConfigEditorDrawerProps {
+  open: boolean;
+  config: MainConfig | null;
+  mode: EditorMode;
+  configs: MainConfig[];
+  subscriptions: SubscriptionSourceListItem[];
+  routeTemplates: RouteTemplate[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}
+
 export default function MainConfigEditorDrawer({
   open,
   config,
@@ -136,84 +144,66 @@ export default function MainConfigEditorDrawer({
   onClose,
   onSaved,
 }: MainConfigEditorDrawerProps) {
-  const [form] = Form.useForm<EditorFormValues>();
-  const isMobile = useIsMobile();
   const [saving, setSaving] = useState(false);
-  const [filteredGroupPreviews, setFilteredGroupPreviews] =
-    useState<FilteredGroupPreviewResponse["groups"]>([]);
+  const [filteredGroupPreviews, setFilteredGroupPreviews] = useState<FilteredGroupPreviewResponse["groups"]>([]);
   const [previewing, setPreviewing] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [importSourceId, setImportSourceId] = useState<string>();
+  const [importSourceId, setImportSourceId] = useState<string>("");
   const [previewYaml, setPreviewYaml] = useState("");
   const [previewDiagnostics, setPreviewDiagnostics] = useState<PreviewResponse["diagnostics"] | null>(null);
 
-  const finalTargetType = Form.useWatch("final_target_type", form);
-  const filteredGroupsWatch = Form.useWatch("filtered_groups", form);
-  const manualGroupsWatch = Form.useWatch("manual_groups", form);
-  const routeTemplateIdWatch = Form.useWatch("route_template_id", form);
+  const form = useForm<EditorFormValues>({ defaultValues });
+  const finalTargetType = form.watch("final_target_type");
+  const filteredGroupsWatch = form.watch("filtered_groups");
+  const manualGroupsWatch = form.watch("manual_groups");
+  const routeTemplateIdWatch = form.watch("route_template_id");
+
+  const filteredGroupsField = useFieldArray({ control: form.control, name: "filtered_groups" });
+  const manualGroupsField = useFieldArray({ control: form.control, name: "manual_groups" });
+  const dialerOverridesField = useFieldArray({ control: form.control, name: "dialer_override_rules" });
+  const slotMappingsField = useFieldArray({ control: form.control, name: "slot_mappings" });
 
   const selectedTemplate = useMemo(
     () => routeTemplates.find((t) => t.id === routeTemplateIdWatch) ?? null,
-    [routeTemplates, routeTemplateIdWatch],
+    [routeTemplates, routeTemplateIdWatch]
   );
 
-  const nonRouteGroupOptions = useMemo(
-    () => [
-      ...(filteredGroupsWatch ?? [])
-        .filter((item) => item?.name)
-        .map((item) => ({ label: item.name, value: item.name })),
-      ...(manualGroupsWatch ?? [])
-        .filter((item) => item?.name)
-        .map((item) => ({ label: item.name, value: item.name })),
-    ],
-    [filteredGroupsWatch, manualGroupsWatch],
-  );
+  const nonRouteGroupOptions = useMemo(() => [
+    ...(filteredGroupsWatch ?? []).filter((g) => g?.name).map((g) => ({ label: g.name, value: g.name })),
+    ...(manualGroupsWatch ?? []).filter((g) => g?.name).map((g) => ({ label: g.name, value: g.name })),
+  ], [filteredGroupsWatch, manualGroupsWatch]);
 
   const filteredGroupOptions = useMemo(
-    () =>
-      (filteredGroupsWatch ?? [])
-        .filter((item) => item?.name)
-        .map((item) => ({ label: item.name, value: item.name })),
-    [filteredGroupsWatch],
-  );
-
-  const importConfigOptions = useMemo(
-    () =>
-      configs
-        .filter((c) => c.id !== config?.id)
-        .map((c) => ({ label: c.name, value: c.id })),
-    [configs, config],
+    () => (filteredGroupsWatch ?? []).filter((g) => g?.name).map((g) => ({ label: g.name, value: g.name })),
+    [filteredGroupsWatch]
   );
 
   const manualGroupOptions = useMemo(
-    () =>
-      (manualGroupsWatch ?? [])
-        .filter((item) => item?.name)
-        .map((item) => ({ label: item.name, value: item.name })),
-    [manualGroupsWatch],
+    () => (manualGroupsWatch ?? []).filter((g) => g?.name).map((g) => ({ label: g.name, value: g.name })),
+    [manualGroupsWatch]
   );
 
+  const importConfigOptions = useMemo(
+    () => configs.filter((c) => c.id !== config?.id).map((c) => ({ label: c.name, value: c.id })),
+    [configs, config]
+  );
+
+  // Filtered group preview
   const triggerFilteredGroupPreview = useCallback(
     async (valuesOverride?: Partial<EditorFormValues>) => {
       if (!open) {
         setFilteredGroupPreviews([]);
         return;
       }
-
-      const values =
-        valuesOverride ??
-        (form.getFieldsValue([
-          "filtered_groups",
-        ]) as Partial<EditorFormValues>);
-      const filteredGroups = values.filtered_groups ?? [];
-      if (!filteredGroups.length) {
+      const values = valuesOverride ?? form.getValues();
+      const fg = values.filtered_groups ?? [];
+      if (!fg.length) {
         setFilteredGroupPreviews([]);
         return;
       }
-
       const payload = {
-        filtered_groups: filteredGroups.map((group) => ({
+        filtered_groups: fg.map((group) => ({
           name: group.name || null,
           rules: (group.rules ?? []).map((rule, index) => ({
             subscription_source_id: rule.subscription_source_id || null,
@@ -223,17 +213,16 @@ export default function MainConfigEditorDrawer({
           })),
         })),
       };
-
       try {
-        const response = await api.post<FilteredGroupPreviewResponse>(
+        const res = await api.post<FilteredGroupPreviewResponse>(
           "/admin/main-configs/filtered-groups/preview",
           payload,
         );
-        setFilteredGroupPreviews(response.data.groups);
-      } catch (error: unknown) {
+        setFilteredGroupPreviews(res.data.groups);
+      } catch (error) {
         const detail = errorDetail(error);
         setFilteredGroupPreviews(
-          filteredGroups.map((group, index) => ({
+          fg.map((group, index) => ({
             name: group.name || `Filtered Group #${index + 1}`,
             rule_results: (group.rules ?? []).map(() => ({
               matched_proxy_names: [],
@@ -255,98 +244,138 @@ export default function MainConfigEditorDrawer({
     [triggerFilteredGroupPreview],
   );
 
+  // Import from another config
   const handleImportConfirm = useCallback(() => {
     const source = configs.find((c) => c.id === importSourceId);
     if (!source) return;
-
     const nextValues: Partial<EditorFormValues> = {
       base_config_yaml: source.base_config_yaml,
       final_target_type: source.final_target_type,
       final_target_group_name: source.final_target_group_name ?? "",
       test_url: source.test_url ?? "",
       test_interval_sec: source.test_interval_sec ?? undefined,
-      filtered_groups: source.filtered_groups,
-      manual_groups: source.manual_groups,
+      filtered_groups: source.filtered_groups.map((g) => ({
+        name: g.name,
+        group_mode: g.group_mode,
+        copy_nodes: g.copy_nodes ?? false,
+        rules: g.rules.map((r) => ({
+          subscription_source_id: r.subscription_source_id,
+          regex_pattern: r.regex_pattern,
+          regex_flags: r.regex_flags,
+        })),
+      })),
+      manual_groups: source.manual_groups.map((g) => ({
+        name: g.name,
+        group_mode: g.group_mode,
+        members: g.members.map((m) => ({
+          member_type: m.member_type,
+          member_ref: m.member_ref,
+        })),
+      })),
       dialer_override_rules: source.dialer_override_rules,
-      route_template_id: source.route_template_id ?? undefined,
+      route_template_id: source.route_template_id ?? "",
       slot_mappings: source.slot_mappings ?? [],
     };
-    form.setFieldsValue(nextValues);
+    // Reset with current name/enabled preserved
+    const currentName = form.getValues("name");
+    const currentEnabled = form.getValues("enabled");
+    form.reset({ ...defaultValues, ...nextValues, name: currentName, enabled: currentEnabled });
     setImportOpen(false);
-    setImportSourceId(undefined);
-    queueFilteredGroupPreview(nextValues as Partial<EditorFormValues>);
+    setImportSourceId("");
+    queueFilteredGroupPreview(nextValues);
   }, [configs, importSourceId, form, queueFilteredGroupPreview]);
 
+  // Initialization
   useEffect(() => {
-    if (!open) {
+    if (!open) return;
+    if (!config) {
+      form.reset(defaultValues);
+      queueFilteredGroupPreview(defaultValues);
       return;
     }
-
-    const init = async () => {
-      if (!config) {
-        form.resetFields();
-        form.setFieldsValue(defaultValues);
-        queueFilteredGroupPreview(defaultValues);
-        return;
-      }
-
-      form.resetFields();
-      const nextValues: EditorFormValues = {
-        ...defaultValues,
-        name: mode === "duplicate" ? `${config.name} (Copy)` : config.name,
-        base_config_yaml: config.base_config_yaml,
-        enabled: config.enabled,
-        final_target_type: config.final_target_type,
-        final_target_group_name: config.final_target_group_name ?? "",
-        test_url: config.test_url ?? "",
-        test_interval_sec: config.test_interval_sec ?? undefined,
-        filtered_groups: config.filtered_groups,
-        manual_groups: config.manual_groups,
-        dialer_override_rules: config.dialer_override_rules,
-        route_template_id: config.route_template_id ?? undefined,
-        slot_mappings: config.slot_mappings ?? [],
-      };
-      form.setFieldsValue(nextValues);
-      queueFilteredGroupPreview(nextValues);
+    const nextValues: EditorFormValues = {
+      ...defaultValues,
+      name: mode === "duplicate" ? `${config.name} (Copy)` : config.name,
+      base_config_yaml: config.base_config_yaml,
+      enabled: config.enabled,
+      final_target_type: config.final_target_type,
+      final_target_group_name: config.final_target_group_name ?? "",
+      test_url: config.test_url ?? "",
+      test_interval_sec: config.test_interval_sec ?? undefined,
+      filtered_groups: config.filtered_groups.map((g) => ({
+        name: g.name,
+        group_mode: g.group_mode,
+        copy_nodes: g.copy_nodes ?? false,
+        rules: g.rules.map((r) => ({
+          subscription_source_id: r.subscription_source_id,
+          regex_pattern: r.regex_pattern,
+          regex_flags: r.regex_flags,
+        })),
+      })),
+      manual_groups: config.manual_groups.map((g) => ({
+        name: g.name,
+        group_mode: g.group_mode,
+        members: g.members.map((m) => ({
+          member_type: m.member_type,
+          member_ref: m.member_ref,
+        })),
+      })),
+      dialer_override_rules: config.dialer_override_rules,
+      route_template_id: config.route_template_id ?? "",
+      slot_mappings: config.slot_mappings ?? [],
     };
-
-    void init();
+    form.reset(nextValues);
+    queueFilteredGroupPreview(nextValues);
   }, [config, mode, form, open, queueFilteredGroupPreview]);
 
+  // Slot mapping auto-sync
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    const currentMappings = form.getValues("slot_mappings");
+    const needsSync =
+      selectedTemplate.slots.length !== currentMappings?.length ||
+      selectedTemplate.slots.some((slot, i) => currentMappings?.[i]?.slot_name !== slot.name);
+    if (needsSync) {
+      const existingMap = new Map((currentMappings ?? []).map((m) => [m.slot_name, m.group_name]));
+      const synced = selectedTemplate.slots.map((slot) => ({
+        slot_name: slot.name,
+        group_name: existingMap.get(slot.name) ?? "",
+      }));
+      window.setTimeout(() => {
+        slotMappingsField.replace(synced);
+      }, 0);
+    }
+  }, [selectedTemplate, form, slotMappingsField]);
+
+  // Draft preview
   const handlePreview = async () => {
+    const values = form.getValues();
+    setPreviewing(true);
     try {
-      const values = form.getFieldsValue(true) as EditorFormValues;
-      setPreviewing(true);
       const groupFields = normalizeGroupFields(values);
       const payload = {
         base_config_yaml: values.base_config_yaml,
         final_target_type: values.final_target_type,
         final_target_group_name:
-          values.final_target_type === "group"
-            ? values.final_target_group_name ?? null
-            : null,
+          values.final_target_type === "group" ? values.final_target_group_name ?? null : null,
         config_id: config?.id ?? null,
         ...groupFields,
       };
-      const response = await api.post<PreviewResponse>(
-        "/admin/main-configs/preview-draft",
-        payload,
-      );
-      setPreviewYaml(response.data.yaml);
-      setPreviewDiagnostics(response.data.diagnostics);
+      const res = await api.post<PreviewResponse>("/admin/main-configs/preview-draft", payload);
+      setPreviewYaml(res.data.yaml);
+      setPreviewDiagnostics(res.data.diagnostics);
       setPreviewOpen(true);
-    } catch (error) {
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
     } finally {
       setPreviewing(false);
     }
   };
 
-  const submit = async () => {
+  // Save
+  const submit = async (values: EditorFormValues) => {
+    setSaving(true);
     try {
-      const values = await form.validateFields();
-      setSaving(true);
-
       const groupFields = normalizeGroupFields(values);
       const payload = {
         name: values.name,
@@ -354,734 +383,589 @@ export default function MainConfigEditorDrawer({
         enabled: values.enabled,
         final_target_type: values.final_target_type,
         final_target_group_name:
-          values.final_target_type === "group"
-            ? values.final_target_group_name ?? null
-            : null,
+          values.final_target_type === "group" ? values.final_target_group_name ?? null : null,
         ...groupFields,
       };
 
       if (mode === "edit" && config) {
-        await api.put<MainConfig>(`/admin/main-configs/${config.id}`, payload);
+        await api.put(`/admin/main-configs/${config.id}`, payload);
       } else {
-        await api.post<MainConfig>("/admin/main-configs", payload);
+        await api.post("/admin/main-configs", payload);
       }
 
-      void message.success(mode === "edit" ? "Main config updated" : "Main config created");
+      toast.success(mode === "edit" ? "Updated" : "Created");
       await onSaved();
       onClose();
-    } catch (error) {
-      if (error && typeof error === "object" && "errorFields" in error) {
-        void message.error("Please fill in all required fields");
-        return;
-      }
-      void message.error(errorDetail(error));
+    } catch (err) {
+      toast.error(errorDetail(err));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Drawer
-      title={mode === "edit" ? `Edit ${config?.name}` : mode === "duplicate" ? "Duplicate Main Config" : "Create Main Config"}
-      open={open}
-      onClose={onClose}
-      width={isMobile ? "100%" : 1200}
-      destroyOnHidden
-      extra={
-        <Space>
-          <Tooltip title="Import from config">
-            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)} />
-          </Tooltip>
-          <Tooltip title="Preview">
-            <Button icon={<EyeOutlined />} onClick={() => void handlePreview()} loading={previewing} />
-          </Tooltip>
-          <Tooltip title="Cancel">
-            <Button icon={<CloseOutlined />} onClick={onClose} />
-          </Tooltip>
-          <Tooltip title="Save">
-            <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void submit()} />
-          </Tooltip>
-        </Space>
-      }
-    >
-      <Form form={form} layout="vertical" initialValues={defaultValues}>
-        <Typography.Title level={5}>Main Settings</Typography.Title>
+    <>
+      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+        <DialogContent className="sm:max-w-5xl w-[95vw] max-h-[90vh] p-0 flex flex-col">
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
+            <div className="flex items-center gap-2">
+              <DialogTitle>
+                {mode === "edit" ? "Edit Config" : mode === "duplicate" ? "Duplicate Config" : "New Config"}
+              </DialogTitle>
+              <Button variant="outline" size="sm" onClick={() => { setImportSourceId(""); setImportOpen(true); }}>
+                <Import className="h-3 w-3 mr-1" /> Import
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void handlePreview()} disabled={previewing}>
+                <Eye className="h-3 w-3 mr-1" /> {previewing ? "..." : "Preview"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+              <Button size="sm" onClick={form.handleSubmit(submit)} disabled={saving}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </DialogHeader>
 
-        <Row gutter={12}>
-          <Col xs={24} sm={12} md={8}>
-            <Form.Item name="name" label="Config Name" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <Form.Item name="enabled" label="Enabled" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          </Col>
-        </Row>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <form className="p-6 space-y-6">
+              {/* Section 1: Main Settings */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Main Settings</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Name</Label>
+                    <Input {...form.register("name", { required: true })} />
+                  </div>
+                  <div className="flex items-center gap-2 pt-6">
+                    <Controller control={form.control} name="enabled" render={({ field }) => (
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    )} />
+                    <Label>Enabled</Label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Final Target</Label>
+                    <Controller control={form.control} name="final_target_type" render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DIRECT">DIRECT</SelectItem>
+                          <SelectItem value="REJECT">REJECT</SelectItem>
+                          <SelectItem value="group">Group</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )} />
+                  </div>
+                  {finalTargetType === "group" && (
+                    <div className="space-y-2">
+                      <Label>Final Target Group</Label>
+                      <Controller control={form.control} name="final_target_group_name" render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger><SelectValue placeholder="Select group" /></SelectTrigger>
+                          <SelectContent>
+                            {nonRouteGroupOptions.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )} />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Base Config YAML</Label>
+                  <Textarea rows={10} {...form.register("base_config_yaml", { required: true })} className="font-mono text-sm" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Test URL</Label>
+                    <Input {...form.register("test_url")} placeholder="https://www.gstatic.com/generate_204" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Test Interval (sec)</Label>
+                    <Input type="number" {...form.register("test_interval_sec", { valueAsNumber: true })} />
+                  </div>
+                </div>
+              </div>
 
-        <Row gutter={12}>
-          <Col xs={24} sm={12} md={8}>
-            <Form.Item
-              name="final_target_type"
-              label="Final Target Type"
-              rules={[{ required: true }]}
-            >
-              <Select
-                options={[
-                  { label: "DIRECT", value: "DIRECT" },
-                  { label: "REJECT", value: "REJECT" },
-                  { label: "group", value: "group" },
-                ]}
-              />
-            </Form.Item>
-          </Col>
-          {finalTargetType === "group" ? (
-            <Col xs={24} sm={12} md={8}>
-              <Form.Item
-                name="final_target_group_name"
-                label="Final Target Group"
-                rules={[{ required: true }]}
-              >
-                <Select options={nonRouteGroupOptions} showSearch />
-              </Form.Item>
-            </Col>
-          ) : null}
-        </Row>
+              <Separator />
 
-        <Form.Item
-          name="base_config_yaml"
-          label="Base Config YAML"
-          rules={[{ required: true, message: "base_config_yaml is required" }]}
-          extra="Base config stays manual by design."
-        >
-          <Input.TextArea rows={10} />
-        </Form.Item>
+              {/* Section 2: Filtered Groups */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Filtered Groups</h3>
+                <SortableFormList
+                  fields={filteredGroupsField.fields}
+                  move={(from, to) => { filteredGroupsField.move(from, to); queueFilteredGroupPreview(); }}
+                  idPrefix="fg"
+                >
+                  {(_field, groupIndex, dragHandle) => (
+                    <FilteredGroupPanel
+                      key={filteredGroupsField.fields[groupIndex]?.id}
+                      form={form}
+                      groupIndex={groupIndex}
+                      dragHandle={dragHandle}
+                      subscriptions={subscriptions}
+                      filteredGroupPreviews={filteredGroupPreviews}
+                      onInsertAbove={() => { filteredGroupsField.insert(groupIndex, { name: "", group_mode: "select", copy_nodes: false, rules: [] }); queueFilteredGroupPreview(); }}
+                      onInsertBelow={() => { filteredGroupsField.insert(groupIndex + 1, { name: "", group_mode: "select", copy_nodes: false, rules: [] }); queueFilteredGroupPreview(); }}
+                      onRemove={() => { filteredGroupsField.remove(groupIndex); queueFilteredGroupPreview(); }}
+                      onPreviewTrigger={queueFilteredGroupPreview}
+                    />
+                  )}
+                </SortableFormList>
+                <Button type="button" variant="outline" size="sm" onClick={() => { filteredGroupsField.append({ name: "", group_mode: "select", copy_nodes: false, rules: [] }); queueFilteredGroupPreview(); }}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Filtered Group
+                </Button>
+              </div>
 
-        <Row gutter={12}>
-          <Col xs={24} sm={12} md={8}>
-            <Form.Item name="test_url" label="Test URL">
-              <Input placeholder="https://www.gstatic.com/generate_204" />
-            </Form.Item>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <Form.Item name="test_interval_sec" label="Test Interval (sec)">
-              <InputNumber min={1} style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-        </Row>
+              <Separator />
 
-        <Divider />
-        <Typography.Title level={5}>Filtered Groups</Typography.Title>
-        <Form.List name="filtered_groups">
-          {(fields, { add, remove, move }) => (
-            <Space direction="vertical" style={{ display: "flex" }}>
-              <SortableFormList fields={fields} move={move} onAfterMove={() => queueFilteredGroupPreview()} idPrefix="fg">
-                {(field, groupIndex, dragHandle) => (
-                  <Collapse
-                    defaultActiveKey={["content"]}
-                    items={[
-                      {
-                        key: "content",
-                        label:
-                          filteredGroupsWatch?.[field.name]?.name?.trim() ||
-                          `Filtered Group #${groupIndex + 1}`,
-                        extra: (
-                          <Space size={4}>
-                            {dragHandle}
-                            <Tooltip title="Insert Above">
-                              <Button
-                                size="small"
-                                icon={<InsertAboveOutlined />}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  add({ name: "", group_mode: "select", copy_nodes: false, rules: [] }, field.name);
-                                  queueFilteredGroupPreview();
-                                }}
-                              />
-                            </Tooltip>
-                            <Tooltip title="Insert Below">
-                              <Button
-                                size="small"
-                                icon={<InsertBelowOutlined />}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  add({ name: "", group_mode: "select", copy_nodes: false, rules: [] }, field.name + 1);
-                                  queueFilteredGroupPreview();
-                                }}
-                              />
-                            </Tooltip>
-                            <Popconfirm
-                              title="Remove this filtered group?"
-                              onConfirm={() => {
-                                remove(field.name);
-                                queueFilteredGroupPreview();
-                              }}
-                            >
-                              <Tooltip title="Remove">
-                                <Button
-                                  danger
-                                  size="small"
-                                  icon={<DeleteOutlined />}
-                                  onClick={(event) => event.stopPropagation()}
-                                />
-                              </Tooltip>
-                            </Popconfirm>
-                          </Space>
-                        ),
-                        children: (
-                          <Space direction="vertical" style={{ display: "flex" }}>
-                            <Row gutter={12}>
-                              <Col xs={24} sm={8}>
-                                <Form.Item
-                                  name={[field.name, "name"]}
-                                  label="Group Name"
-                                  rules={[{ required: true }]}
-                                >
-                                  <Input onBlur={() => void triggerFilteredGroupPreview()} />
-                                </Form.Item>
-                              </Col>
-                              <Col xs={12} sm={6}>
-                                <Form.Item
-                                  name={[field.name, "group_mode"]}
-                                  label="Mode"
-                                  rules={[{ required: true }]}
-                                >
-                                  <Select options={groupModeOptions} />
-                                </Form.Item>
-                              </Col>
-                              <Col xs={12} sm={5}>
-                                <Form.Item name={[field.name, "copy_nodes"]} label="Copy Nodes" valuePropName="checked">
-                                  <Switch />
-                                </Form.Item>
-                              </Col>
-                            </Row>
+              {/* Section 3: Manual Groups */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Manual Groups</h3>
+                <SortableFormList
+                  fields={manualGroupsField.fields}
+                  move={manualGroupsField.move}
+                  idPrefix="mg"
+                >
+                  {(_field, groupIndex, dragHandle) => (
+                    <ManualGroupPanel
+                      key={manualGroupsField.fields[groupIndex]?.id}
+                      form={form}
+                      groupIndex={groupIndex}
+                      dragHandle={dragHandle}
+                      filteredGroupOptions={filteredGroupOptions}
+                      manualGroupOptions={manualGroupOptions}
+                      onInsertAbove={() => manualGroupsField.insert(groupIndex, { name: "", group_mode: "select", members: [] })}
+                      onInsertBelow={() => manualGroupsField.insert(groupIndex + 1, { name: "", group_mode: "select", members: [] })}
+                      onRemove={() => manualGroupsField.remove(groupIndex)}
+                    />
+                  )}
+                </SortableFormList>
+                <Button type="button" variant="outline" size="sm" onClick={() => manualGroupsField.append({ name: "", group_mode: "select", members: [] })}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Manual Group
+                </Button>
+              </div>
 
-                            <Form.List name={[field.name, "rules"]}>
-                              {(ruleFields, ruleOps) => (
-                                <Space direction="vertical" style={{ display: "flex" }}>
-                                  <Typography.Text strong>Rules</Typography.Text>
-                                  <SortableFormList fields={ruleFields} move={ruleOps.move} onAfterMove={() => queueFilteredGroupPreview()} idPrefix={`fg-${field.key}-rule`}>
-                                    {(ruleField, _ruleIndex, ruleDragHandle) => (
-                                      <Card size="small">
-                                        <Row gutter={12} align="middle">
-                                          <Col xs={1}>{ruleDragHandle}</Col>
-                                          <Col xs={23} sm={7}>
-                                            <Form.Item
-                                              name={[ruleField.name, "subscription_source_id"]}
-                                              label="Subscription"
-                                              rules={[{ required: true }]}
-                                              style={{ marginBottom: 0 }}
-                                            >
-                                              <Select
-                                                options={subscriptions.map((item) => ({
-                                                  label: item.name,
-                                                  value: item.id,
-                                                }))}
-                                                onBlur={() => void triggerFilteredGroupPreview()}
-                                              />
-                                            </Form.Item>
-                                          </Col>
-                                          <Col xs={16} sm={7}>
-                                            <Form.Item
-                                              name={[ruleField.name, "regex_pattern"]}
-                                              label="Regex"
-                                              rules={[{ required: true }]}
-                                              style={{ marginBottom: 0 }}
-                                            >
-                                              <Input onBlur={() => void triggerFilteredGroupPreview()} />
-                                            </Form.Item>
-                                          </Col>
-                                          <Col xs={8} sm={4}>
-                                            <Form.Item name={[ruleField.name, "regex_flags"]} label="Flags" style={{ marginBottom: 0 }}>
-                                              <Input
-                                                placeholder="i"
-                                                onBlur={() => void triggerFilteredGroupPreview()}
-                                              />
-                                            </Form.Item>
-                                          </Col>
-                                          <Col xs={24} sm={5}>
-                                            <Space size={4}>
-                                              <Tooltip title="Insert Above">
-                                                <Button
-                                                  icon={<InsertAboveOutlined />}
-                                                  onClick={() => {
-                                                    ruleOps.add({ subscription_source_id: "", regex_pattern: ".*", regex_flags: "" }, ruleField.name);
-                                                    queueFilteredGroupPreview();
-                                                  }}
-                                                />
-                                              </Tooltip>
-                                              <Tooltip title="Insert Below">
-                                                <Button
-                                                  icon={<InsertBelowOutlined />}
-                                                  onClick={() => {
-                                                    ruleOps.add({ subscription_source_id: "", regex_pattern: ".*", regex_flags: "" }, ruleField.name + 1);
-                                                    queueFilteredGroupPreview();
-                                                  }}
-                                                />
-                                              </Tooltip>
-                                              <Tooltip title="Delete">
-                                                <Button
-                                                  danger
-                                                  icon={<DeleteOutlined />}
-                                                  onClick={() => {
-                                                    ruleOps.remove(ruleField.name);
-                                                    queueFilteredGroupPreview();
-                                                  }}
-                                                />
-                                              </Tooltip>
-                                            </Space>
-                                          </Col>
-                                        </Row>
-                                        {(() => {
-                                          const ruleResult = filteredGroupPreviews[field.name]?.rule_results?.[ruleField.name];
-                                          if (!ruleResult) return null;
-                                          return (
-                                            <div style={{ marginTop: 8 }}>
-                                              {ruleResult.issue ? (
-                                                <Alert type="warning" showIcon message={ruleResult.issue} style={{ marginBottom: 4 }} />
-                                              ) : ruleResult.matched_proxy_names.length > 0 ? (
-                                                <Space wrap>
-                                                  {ruleResult.matched_proxy_names.map((name) => (
-                                                    <Tag key={name}>{name}</Tag>
-                                                  ))}
-                                                </Space>
-                                              ) : (
-                                                <Typography.Text type="secondary">No matched proxies</Typography.Text>
-                                              )}
-                                            </div>
-                                          );
-                                        })()}
-                                      </Card>
-                                    )}
-                                  </SortableFormList>
-                                  <Tooltip title="Add Filter Rule">
-                                    <Button
-                                      icon={<PlusOutlined />}
-                                      onClick={() => {
-                                        ruleOps.add({
-                                          subscription_source_id: "",
-                                          regex_pattern: ".*",
-                                          regex_flags: "",
-                                        });
-                                        queueFilteredGroupPreview();
-                                      }}
-                                    />
-                                  </Tooltip>
-                                </Space>
-                              )}
-                            </Form.List>
-                          </Space>
-                        ),
-                      },
-                    ]}
-                  />
+              <Separator />
+
+              {/* Section 4: Dialer Overrides */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Dialer Overrides</h3>
+                <SortableFormList
+                  fields={dialerOverridesField.fields}
+                  move={dialerOverridesField.move}
+                  idPrefix="do"
+                >
+                  {(_field, index, dragHandle) => (
+                    <div className="p-3 border rounded-md bg-card">
+                      <div className="flex items-center gap-2 mb-2">
+                        {dragHandle}
+                        <span className="text-sm font-medium flex-1">Override #{index + 1}</span>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => dialerOverridesField.insert(index, { filtered_group_name: "", dialer_group_name: "" })} title="Insert above">
+                          <InsertAboveOutlined className="h-4 w-4" />
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => dialerOverridesField.insert(index + 1, { filtered_group_name: "", dialer_group_name: "" })} title="Insert below">
+                          <InsertBelowOutlined className="h-4 w-4" />
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => dialerOverridesField.remove(index)} className="text-destructive">
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Filtered Group</Label>
+                          <Controller control={form.control} name={`dialer_override_rules.${index}.filtered_group_name`} render={({ field }) => (
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                              <SelectContent>
+                                {filteredGroupOptions.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Dialer Group</Label>
+                          <Controller control={form.control} name={`dialer_override_rules.${index}.dialer_group_name`} render={({ field }) => (
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                              <SelectContent>
+                                {nonRouteGroupOptions.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </SortableFormList>
+                <Button type="button" variant="outline" size="sm" onClick={() => dialerOverridesField.append({ filtered_group_name: "", dialer_group_name: "" })}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Override
+                </Button>
+              </div>
+
+              <Separator />
+
+              {/* Section 5: Route Template */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Route Template</h3>
+                <Controller control={form.control} name="route_template_id" render={({ field }) => (
+                  <Select value={field.value || "__none__"} onValueChange={(v) => { field.onChange(v === "__none__" ? "" : v); form.setValue("slot_mappings", []); }}>
+                    <SelectTrigger><SelectValue placeholder="No route template">{field.value ? routeTemplates.find((t) => t.id === field.value)?.name ?? undefined : "No route template"}</SelectValue></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No route template</SelectItem>
+                      {routeTemplates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )} />
+
+                {selectedTemplate && selectedTemplate.slots.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Slot Mappings</Label>
+                    {slotMappingsField.fields.map((field, index) => (
+                      <div key={field.id} className="grid grid-cols-2 gap-2 items-center">
+                        <div className="text-sm font-medium px-2 py-1 bg-muted rounded">
+                          {form.getValues(`slot_mappings.${index}.slot_name`)}
+                        </div>
+                        <Controller control={form.control} name={`slot_mappings.${index}.group_name`} render={({ field: f }) => (
+                          <Select value={f.value} onValueChange={f.onChange}>
+                            <SelectTrigger><SelectValue placeholder="Select group" /></SelectTrigger>
+                            <SelectContent>
+                              {nonRouteGroupOptions.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )} />
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </SortableFormList>
-              <Tooltip title="Add Filtered Group">
-                <Button
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    add({
-                      name: "",
-                      group_mode: "select",
-                      copy_nodes: false,
-                      rules: [],
-                    });
-                    queueFilteredGroupPreview();
-                  }}
-                />
-              </Tooltip>
-            </Space>
+              </div>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import from Config</DialogTitle>
+          </DialogHeader>
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              This will overwrite all current form fields except name and enabled status.
+            </AlertDescription>
+          </Alert>
+          <Select value={importSourceId || "__none__"} onValueChange={(v: string | null) => setImportSourceId(v === "__none__" || v === null ? "" : v)}>
+            <SelectTrigger><SelectValue placeholder="Select config">{importConfigOptions.find((o) => o.value === importSourceId)?.label ?? undefined}</SelectValue></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__" disabled>Select a config...</SelectItem>
+              {importConfigOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>Cancel</Button>
+            <Button onClick={handleImportConfirm} disabled={!importSourceId}>Import</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Draft Preview</DialogTitle>
+          </DialogHeader>
+          {previewDiagnostics && (
+            <div className="space-y-1 text-sm">
+              <div><span className="font-medium">Stale subscriptions:</span> {previewDiagnostics.stale_subscription_ids.length > 0 ? previewDiagnostics.stale_subscription_ids.join(", ") : "none"}</div>
+              <div><span className="font-medium">Stale rules:</span> {previewDiagnostics.stale_rule_ids.length > 0 ? previewDiagnostics.stale_rule_ids.join(", ") : "none"}</div>
+              <div><span className="font-medium">Warnings:</span> {previewDiagnostics.warnings.length > 0 ? previewDiagnostics.warnings.join("; ") : "none"}</div>
+            </div>
           )}
-        </Form.List>
+          <Textarea readOnly rows={26} value={previewYaml} className="font-mono text-xs" />
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
-        <Divider />
-        <Typography.Title level={5}>Manual Groups</Typography.Title>
-        <Form.List name="manual_groups">
-          {(fields, { add, remove, move }) => (
-            <Space direction="vertical" style={{ display: "flex" }}>
-              <SortableFormList fields={fields} move={move} idPrefix="mg">
-                {(field, groupIndex, dragHandle) => (
-                  <Collapse
-                    defaultActiveKey={["content"]}
-                    items={[
-                      {
-                        key: "content",
-                        label:
-                          manualGroupsWatch?.[field.name]?.name?.trim() ||
-                          `Manual Group #${groupIndex + 1}`,
-                        extra: (
-                          <Space size={4}>
-                            {dragHandle}
-                            <Tooltip title="Insert Above">
-                              <Button
-                                size="small"
-                                icon={<InsertAboveOutlined />}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  add({ name: "", group_mode: "select", members: [] }, field.name);
-                                }}
-                              />
-                            </Tooltip>
-                            <Tooltip title="Insert Below">
-                              <Button
-                                size="small"
-                                icon={<InsertBelowOutlined />}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  add({ name: "", group_mode: "select", members: [] }, field.name + 1);
-                                }}
-                              />
-                            </Tooltip>
-                            <Popconfirm
-                              title="Remove this manual group?"
-                              onConfirm={() => remove(field.name)}
-                            >
-                              <Tooltip title="Remove">
-                                <Button
-                                  danger
-                                  size="small"
-                                  icon={<DeleteOutlined />}
-                                  onClick={(event) => event.stopPropagation()}
-                                />
-                              </Tooltip>
-                            </Popconfirm>
-                          </Space>
-                        ),
-                        children: (
-                          <Space direction="vertical" style={{ display: "flex" }}>
-                            <Row gutter={12}>
-                              <Col xs={24} sm={10}>
-                                <Form.Item
-                                  name={[field.name, "name"]}
-                                  label="Group Name"
-                                  rules={[{ required: true }]}
-                                >
-                                  <Input />
-                                </Form.Item>
-                              </Col>
-                              <Col xs={12} sm={7}>
-                                <Form.Item
-                                  name={[field.name, "group_mode"]}
-                                  label="Mode"
-                                  rules={[{ required: true }]}
-                                >
-                                  <Select options={groupModeOptions} />
-                                </Form.Item>
-                              </Col>
-                            </Row>
+// --- Sub-components ---
 
-                            <Form.List name={[field.name, "members"]}>
-                              {(memberFields, memberOps) => (
-                                <Space direction="vertical" style={{ display: "flex" }}>
-                                  <Typography.Text strong>Members</Typography.Text>
-                                  <SortableFormList fields={memberFields} move={memberOps.move} idPrefix={`mg-${field.key}-member`}>
-                                    {(memberField, _memberIndex, memberDragHandle) => (
-                                      <Card size="small">
-                                        <Row gutter={12} align="middle">
-                                          <Col xs={1}>{memberDragHandle}</Col>
-                                          <Col xs={23} sm={6}>
-                                            <Form.Item
-                                              name={[memberField.name, "member_type"]}
-                                              label="Type"
-                                              rules={[{ required: true }]}
-                                              style={{ marginBottom: 0 }}
-                                            >
-                                              <Select
-                                                options={[
-                                                  { label: "filtered_group", value: "filtered_group" },
-                                                  { label: "manual_group", value: "manual_group" },
-                                                ]}
-                                              />
-                                            </Form.Item>
-                                          </Col>
-                                          <Col xs={24} sm={10}>
-                                            <Form.Item noStyle shouldUpdate>
-                                              {() => {
-                                                const memberType = form.getFieldValue([
-                                                  "manual_groups",
-                                                  field.name,
-                                                  "members",
-                                                  memberField.name,
-                                                  "member_type",
-                                                ]) as ManualMemberType | undefined;
+interface FilteredGroupPanelProps {
+  form: ReturnType<typeof useForm<EditorFormValues>>;
+  groupIndex: number;
+  dragHandle: React.ReactNode;
+  subscriptions: SubscriptionSourceListItem[];
+  filteredGroupPreviews: FilteredGroupPreviewResponse["groups"];
+  onInsertAbove: () => void;
+  onInsertBelow: () => void;
+  onRemove: () => void;
+  onPreviewTrigger: () => void;
+}
 
-                                                if (memberType === "filtered_group") {
-                                                  return (
-                                                    <Form.Item
-                                                      name={[memberField.name, "member_ref"]}
-                                                      label="Member"
-                                                      rules={[{ required: true }]}
-                                                      style={{ marginBottom: 0 }}
-                                                    >
-                                                      <Select options={filteredGroupOptions} showSearch />
-                                                    </Form.Item>
-                                                  );
-                                                }
+function FilteredGroupPanel({
+  form,
+  groupIndex,
+  dragHandle,
+  subscriptions,
+  filteredGroupPreviews,
+  onInsertAbove,
+  onInsertBelow,
+  onRemove,
+  onPreviewTrigger,
+}: FilteredGroupPanelProps) {
+  const [isOpen, setIsOpen] = useState(true);
+  const rulesField = useFieldArray({ control: form.control, name: `filtered_groups.${groupIndex}.rules` });
+  const groupName = form.watch(`filtered_groups.${groupIndex}.name`);
 
-                                                if (memberType === "manual_group") {
-                                                  return (
-                                                    <Form.Item
-                                                      name={[memberField.name, "member_ref"]}
-                                                      label="Member"
-                                                      rules={[{ required: true }]}
-                                                      style={{ marginBottom: 0 }}
-                                                    >
-                                                      <Select options={manualGroupOptions} showSearch />
-                                                    </Form.Item>
-                                                  );
-                                                }
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="border rounded-md bg-card">
+      <div className="flex items-center gap-2 p-3">
+        {dragHandle}
+        <CollapsibleTrigger className="flex-1 text-left text-sm font-medium hover:underline">
+            {groupName || `Filtered Group #${groupIndex + 1}`}
+        </CollapsibleTrigger>
+        <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onInsertAbove(); }} title="Insert above">
+          <InsertAboveOutlined className="h-4 w-4" />
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onInsertBelow(); }} title="Insert below">
+          <InsertBelowOutlined className="h-4 w-4" />
+        </Button>
+        <ConfirmPopover description="Remove this group?" confirmText="Remove" onConfirm={onRemove}>
+          <Button type="button" variant="ghost" size="sm" onClick={(e) => e.stopPropagation()} className="text-destructive">
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </ConfirmPopover>
+      </div>
+      <CollapsibleContent className="px-3 pb-3 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Name</Label>
+            <Input {...form.register(`filtered_groups.${groupIndex}.name`, { required: true, onBlur: () => onPreviewTrigger() })} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Mode</Label>
+            <div className="flex items-center gap-2">
+              <Controller control={form.control} name={`filtered_groups.${groupIndex}.group_mode`} render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {groupModeOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )} />
+              <Controller control={form.control} name={`filtered_groups.${groupIndex}.copy_nodes`} render={({ field }) => (
+                <Switch checked={field.value} onCheckedChange={field.onChange} />
+              )} />
+              <Label className="text-xs whitespace-nowrap">Copy Nodes</Label>
+            </div>
+          </div>
+        </div>
 
-                                                return null;
-                                              }}
-                                            </Form.Item>
-                                          </Col>
-                                          <Col xs={24} sm={4}>
-                                            <Space size={4}>
-                                              <Tooltip title="Insert Above">
-                                                <Button icon={<InsertAboveOutlined />} onClick={() => memberOps.add({ member_type: "filtered_group", member_ref: "" }, memberField.name)} />
-                                              </Tooltip>
-                                              <Tooltip title="Insert Below">
-                                                <Button icon={<InsertBelowOutlined />} onClick={() => memberOps.add({ member_type: "filtered_group", member_ref: "" }, memberField.name + 1)} />
-                                              </Tooltip>
-                                              <Tooltip title="Delete">
-                                                <Button danger icon={<DeleteOutlined />} onClick={() => memberOps.remove(memberField.name)} />
-                                              </Tooltip>
-                                            </Space>
-                                          </Col>
-                                        </Row>
-                                      </Card>
-                                    )}
-                                  </SortableFormList>
-                                  <Tooltip title="Add Manual Member">
-                                    <Button
-                                      icon={<PlusOutlined />}
-                                      onClick={() =>
-                                        memberOps.add({
-                                          member_type: "filtered_group",
-                                          member_ref: "",
-                                        })
-                                      }
-                                    />
-                                  </Tooltip>
-                                </Space>
-                              )}
-                            </Form.List>
-                          </Space>
-                        ),
-                      },
-                    ]}
-                  />
-                )}
-              </SortableFormList>
-              <Tooltip title="Add Manual Group">
-                <Button
-                  icon={<PlusOutlined />}
-                  onClick={() =>
-                    add({
-                      name: "",
-                      group_mode: "select",
-                      members: [],
-                    })
-                  }
-                />
-              </Tooltip>
-            </Space>
-          )}
-        </Form.List>
+        {/* Rules */}
+        <div className="space-y-2">
+          <Label className="text-xs font-medium">Rules</Label>
+          <SortableFormList
+            fields={rulesField.fields}
+            move={(from, to) => { rulesField.move(from, to); onPreviewTrigger(); }}
+            idPrefix={`fg-${groupIndex}-rule`}
+          >
+            {(_field, ruleIndex, ruleDragHandle) => {
+              const ruleResult = filteredGroupPreviews[groupIndex]?.rule_results?.[ruleIndex];
+              return (
+                <div className="p-2 border rounded bg-background space-y-2">
+                  <div className="flex items-center gap-2">
+                    {ruleDragHandle}
+                    <div className="flex-1 flex flex-col sm:flex-row gap-2">
+                      <Controller control={form.control} name={`filtered_groups.${groupIndex}.rules.${ruleIndex}.subscription_source_id`} render={({ field }) => (
+                        <Select value={field.value} onValueChange={(v) => { field.onChange(v); onPreviewTrigger(); }}>
+                          <SelectTrigger className="text-xs sm:min-w-0 sm:flex-[3]"><SelectValue placeholder="Subscription">{subscriptions.find((s) => s.id === field.value)?.name ?? undefined}</SelectValue></SelectTrigger>
+                          <SelectContent>
+                            {subscriptions.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )} />
+                      <Input
+                        {...form.register(`filtered_groups.${groupIndex}.rules.${ruleIndex}.regex_pattern`, { onBlur: () => onPreviewTrigger() })}
+                        placeholder=".*"
+                        className="text-xs sm:min-w-0 sm:flex-[3]"
+                      />
+                      <Input
+                        {...form.register(`filtered_groups.${groupIndex}.rules.${ruleIndex}.regex_flags`, { onBlur: () => onPreviewTrigger() })}
+                        placeholder="i"
+                        className="text-xs sm:min-w-0 sm:flex-1"
+                      />
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => { rulesField.insert(ruleIndex, { subscription_source_id: "", regex_pattern: ".*", regex_flags: "" }); onPreviewTrigger(); }} title="Insert above">
+                      <InsertAboveOutlined className="h-3 w-3" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => { rulesField.insert(ruleIndex + 1, { subscription_source_id: "", regex_pattern: ".*", regex_flags: "" }); onPreviewTrigger(); }} title="Insert below">
+                      <InsertBelowOutlined className="h-3 w-3" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => { rulesField.remove(ruleIndex); onPreviewTrigger(); }} className="text-destructive">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  {ruleResult && (
+                    <div className="pl-6">
+                      {ruleResult.issue ? (
+                        <Alert variant="destructive" className="py-1 px-2">
+                          <AlertDescription className="text-xs">{ruleResult.issue}</AlertDescription>
+                        </Alert>
+                      ) : ruleResult.matched_proxy_names.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {ruleResult.matched_proxy_names.map((name) => (
+                            <Badge key={name} variant="secondary" className="text-xs">{name}</Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No matched proxies</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            }}
+          </SortableFormList>
+          <Button type="button" variant="outline" size="sm" onClick={() => { rulesField.append({ subscription_source_id: "", regex_pattern: ".*", regex_flags: "" }); onPreviewTrigger(); }}>
+            <Plus className="h-3 w-3 mr-1" /> Add Rule
+          </Button>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
-        <Divider />
-        <Typography.Title level={5}>Dialer Overrides</Typography.Title>
-        <Form.List name="dialer_override_rules">
-          {(fields, { add, remove, move }) => (
-            <Space direction="vertical" style={{ display: "flex" }}>
-              <SortableFormList fields={fields} move={move} idPrefix="dor">
-                {(field, _index, dragHandle) => (
-                  <Card size="small">
-                    <Row gutter={12} align="middle">
-                      <Col xs={1}>{dragHandle}</Col>
-                      <Col xs={23} sm={10}>
-                        <Form.Item
-                          name={[field.name, "filtered_group_name"]}
-                          label="Filtered Group"
-                          rules={[{ required: true }]}
-                          style={{ marginBottom: 0 }}
-                        >
-                          <Select options={filteredGroupOptions} showSearch />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={8}>
-                        <Form.Item
-                          name={[field.name, "dialer_group_name"]}
-                          label="Dialer Group"
-                          rules={[{ required: true }]}
-                          style={{ marginBottom: 0 }}
-                        >
-                          <Select options={nonRouteGroupOptions} showSearch />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={3}>
-                        <Space size={4}>
-                          <Tooltip title="Insert Above">
-                            <Button icon={<InsertAboveOutlined />} onClick={() => add({ filtered_group_name: "", dialer_group_name: "" }, field.name)} />
-                          </Tooltip>
-                          <Tooltip title="Insert Below">
-                            <Button icon={<InsertBelowOutlined />} onClick={() => add({ filtered_group_name: "", dialer_group_name: "" }, field.name + 1)} />
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
-                          </Tooltip>
-                        </Space>
-                      </Col>
-                    </Row>
-                  </Card>
-                )}
-              </SortableFormList>
-              <Tooltip title="Add Dialer Override">
-                <Button
-                  icon={<PlusOutlined />}
-                  onClick={() =>
-                    add({
-                      filtered_group_name: "",
-                      dialer_group_name: "",
-                    })
-                  }
-                />
-              </Tooltip>
-            </Space>
-          )}
-        </Form.List>
+interface ManualGroupPanelProps {
+  form: ReturnType<typeof useForm<EditorFormValues>>;
+  groupIndex: number;
+  dragHandle: React.ReactNode;
+  filteredGroupOptions: { label: string; value: string }[];
+  manualGroupOptions: { label: string; value: string }[];
+  onInsertAbove: () => void;
+  onInsertBelow: () => void;
+  onRemove: () => void;
+}
 
-        <Divider />
-        <Typography.Title level={5}>Route Template</Typography.Title>
-        <Row gutter={12}>
-          <Col xs={24} sm={12}>
-            <Form.Item name="route_template_id" label="Route Template">
-              <Select
-                allowClear
-                placeholder="No route template"
-                options={routeTemplates.map((t) => ({ label: t.name, value: t.id }))}
-                showSearch
-                onChange={() => {
-                  form.setFieldValue("slot_mappings", []);
-                }}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
+function ManualGroupPanel({
+  form,
+  groupIndex,
+  dragHandle,
+  filteredGroupOptions,
+  manualGroupOptions,
+  onInsertAbove,
+  onInsertBelow,
+  onRemove,
+}: ManualGroupPanelProps) {
+  const [isOpen, setIsOpen] = useState(true);
+  const membersField = useFieldArray({ control: form.control, name: `manual_groups.${groupIndex}.members` });
+  const groupName = form.watch(`manual_groups.${groupIndex}.name`);
 
-        {selectedTemplate && selectedTemplate.slots.length > 0 && (
-          <Card size="small" title="Slot Mappings">
-            <Form.List name="slot_mappings">
-              {(fields) => {
-                const currentMappings = form.getFieldValue("slot_mappings") as SlotMappingFormValue[] | undefined;
-                const needsSync = selectedTemplate.slots.length !== (currentMappings?.length ?? 0) ||
-                  selectedTemplate.slots.some((slot, i) => currentMappings?.[i]?.slot_name !== slot.name);
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="border rounded-md bg-card">
+      <div className="flex items-center gap-2 p-3">
+        {dragHandle}
+        <CollapsibleTrigger className="flex-1 text-left text-sm font-medium hover:underline">
+            {groupName || `Manual Group #${groupIndex + 1}`}
+        </CollapsibleTrigger>
+        <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onInsertAbove(); }} title="Insert above">
+          <InsertAboveOutlined className="h-4 w-4" />
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onInsertBelow(); }} title="Insert below">
+          <InsertBelowOutlined className="h-4 w-4" />
+        </Button>
+        <ConfirmPopover description="Remove this group?" confirmText="Remove" onConfirm={onRemove}>
+          <Button type="button" variant="ghost" size="sm" onClick={(e) => e.stopPropagation()} className="text-destructive">
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </ConfirmPopover>
+      </div>
+      <CollapsibleContent className="px-3 pb-3 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Name</Label>
+            <Input {...form.register(`manual_groups.${groupIndex}.name`, { required: true })} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Mode</Label>
+            <Controller control={form.control} name={`manual_groups.${groupIndex}.group_mode`} render={({ field }) => (
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {groupModeOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )} />
+          </div>
+        </div>
 
-                if (needsSync) {
-                  const existingMap = new Map((currentMappings ?? []).map((m) => [m.slot_name, m.group_name]));
-                  const synced = selectedTemplate.slots.map((slot) => ({
-                    slot_name: slot.name,
-                    group_name: existingMap.get(slot.name) ?? "",
-                  }));
-                  window.setTimeout(() => form.setFieldValue("slot_mappings", synced), 0);
-                }
-
-                return (
-                  <Space direction="vertical" style={{ display: "flex" }}>
-                    {fields.map((field, index) => {
-                      const slotName = selectedTemplate.slots[index]?.name ?? `Slot ${index + 1}`;
-                      return (
-                        <Row key={field.key} gutter={12} align="middle">
-                          <Col xs={8}>
-                            <Typography.Text strong>{slotName}</Typography.Text>
-                            <Form.Item name={[field.name, "slot_name"]} hidden>
-                              <Input />
-                            </Form.Item>
-                          </Col>
-                          <Col xs={16}>
-                            <Form.Item
-                              name={[field.name, "group_name"]}
-                              rules={[{ required: true, message: "Select a group" }]}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <Select options={nonRouteGroupOptions} showSearch placeholder="Select group" />
-                            </Form.Item>
-                          </Col>
-                        </Row>
-                      );
-                    })}
-                  </Space>
-                );
-              }}
-            </Form.List>
-          </Card>
-        )}
-      </Form>
-
-      <Modal
-        title="Generated YAML Preview"
-        open={previewOpen}
-        onCancel={() => setPreviewOpen(false)}
-        footer={null}
-        width={isMobile ? "95vw" : 1000}
-        destroyOnHidden
-      >
-        {previewDiagnostics ? (
-          <Space direction="vertical" style={{ display: "flex", marginBottom: 12 }}>
-            <Typography.Text type="secondary">
-              stale subscriptions:{" "}
-              {previewDiagnostics.stale_subscription_ids.length
-                ? previewDiagnostics.stale_subscription_ids.join(", ")
-                : "none"}
-            </Typography.Text>
-            <Typography.Text type="secondary">
-              stale rules:{" "}
-              {previewDiagnostics.stale_rule_ids.length
-                ? previewDiagnostics.stale_rule_ids.join(", ")
-                : "none"}
-            </Typography.Text>
-            <Typography.Text type="secondary">
-              warnings:{" "}
-              {previewDiagnostics.warnings.length
-                ? previewDiagnostics.warnings.join(" | ")
-                : "none"}
-            </Typography.Text>
-          </Space>
-        ) : null}
-        <Input.TextArea
-          value={previewYaml}
-          rows={26}
-          readOnly
-          style={{ fontFamily: "monospace" }}
-        />
-      </Modal>
-
-      <Modal
-        title="Import from Another Config"
-        open={importOpen}
-        onCancel={() => { setImportOpen(false); setImportSourceId(undefined); }}
-        onOk={handleImportConfirm}
-        okButtonProps={{ disabled: !importSourceId }}
-        destroyOnHidden
-      >
-        <Alert
-          type="warning"
-          message="This will overwrite all current form fields except name and enabled status."
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-        <Select
-          showSearch
-          optionFilterProp="label"
-          placeholder="Select a config..."
-          options={importConfigOptions}
-          value={importSourceId}
-          onChange={setImportSourceId}
-          style={{ width: "100%" }}
-        />
-      </Modal>
-    </Drawer>
+        {/* Members */}
+        <div className="space-y-2">
+          <Label className="text-xs font-medium">Members</Label>
+          <SortableFormList
+            fields={membersField.fields}
+            move={membersField.move}
+            idPrefix={`mg-${groupIndex}-member`}
+          >
+            {(_field, memberIndex, memberDragHandle) => {
+              const memberType = form.watch(`manual_groups.${groupIndex}.members.${memberIndex}.member_type`);
+              const refOptions = memberType === "filtered_group" ? filteredGroupOptions : manualGroupOptions;
+              return (
+                <div className="p-2 border rounded bg-background">
+                  <div className="flex items-center gap-2">
+                    {memberDragHandle}
+                    <div className="flex-1 flex flex-col sm:flex-row gap-2">
+                      <Controller control={form.control} name={`manual_groups.${groupIndex}.members.${memberIndex}.member_type`} render={({ field }) => (
+                        <Select value={field.value} onValueChange={(v) => { field.onChange(v); form.setValue(`manual_groups.${groupIndex}.members.${memberIndex}.member_ref`, ""); }}>
+                          <SelectTrigger className="text-xs sm:min-w-0 sm:flex-1"><SelectValue>{field.value === "filtered_group" ? "Filtered Group" : field.value === "manual_group" ? "Manual Group" : undefined}</SelectValue></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="filtered_group">Filtered Group</SelectItem>
+                            <SelectItem value="manual_group">Manual Group</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )} />
+                      <Controller control={form.control} name={`manual_groups.${groupIndex}.members.${memberIndex}.member_ref`} render={({ field }) => (
+                        <Select key={memberType} value={field.value || null} onValueChange={field.onChange}>
+                          <SelectTrigger className="text-xs sm:min-w-0 sm:flex-[2]"><SelectValue placeholder="Select" /></SelectTrigger>
+                          <SelectContent>
+                            {refOptions.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )} />
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => membersField.insert(memberIndex, { member_type: "filtered_group", member_ref: "" })} title="Insert above">
+                      <InsertAboveOutlined className="h-3 w-3" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => membersField.insert(memberIndex + 1, { member_type: "filtered_group", member_ref: "" })} title="Insert below">
+                      <InsertBelowOutlined className="h-3 w-3" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => membersField.remove(memberIndex)} className="text-destructive">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            }}
+          </SortableFormList>
+          <Button type="button" variant="outline" size="sm" onClick={() => membersField.append({ member_type: "filtered_group", member_ref: "" })}>
+            <Plus className="h-3 w-3 mr-1" /> Add Member
+          </Button>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

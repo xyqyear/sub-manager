@@ -1,50 +1,56 @@
-import { Button, Card, Form, Input, Typography } from "antd";
 import { useNavigate } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { z } from "zod/v4";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { getAdminToken, setAdminToken } from "@/utils/api";
 
-interface LoginFormValues {
-  token: string;
-}
+const schema = z.object({
+  token: z.string().min(1, "Token is required"),
+});
+
+type FormValues = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { token: getAdminToken() },
+  });
 
-  const handleSubmit = (values: LoginFormValues) => {
+  const onSubmit = (values: FormValues) => {
     setAdminToken(values.token.trim());
     navigate("/subscriptions", { replace: true });
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-      }}
-    >
-      <Card title="Admin Login" style={{ maxWidth: 420, width: "100%" }}>
-        <Typography.Paragraph type="secondary">
-          Enter the configured admin bearer token.
-        </Typography.Paragraph>
-        <Form<LoginFormValues>
-          layout="vertical"
-          initialValues={{ token: getAdminToken() }}
-          onFinish={handleSubmit}
-        >
-          <Form.Item
-            label="Token"
-            name="token"
-            rules={[{ required: true, message: "Token is required" }]}
-          >
-            <Input.Password placeholder="change-me" />
-          </Form.Item>
-
-          <Button type="primary" htmlType="submit" block>
-            Save and Continue
-          </Button>
-        </Form>
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-center">Sub Manager</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="token">Admin Token</Label>
+              <Input
+                id="token"
+                type="password"
+                placeholder="Enter your admin token"
+                {...register("token")}
+              />
+              {errors.token && (
+                <p className="text-sm text-destructive">{errors.token.message}</p>
+              )}
+            </div>
+            <Button type="submit" className="w-full">
+              Save and Continue
+            </Button>
+          </form>
+        </CardContent>
       </Card>
     </div>
   );

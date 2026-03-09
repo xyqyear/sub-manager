@@ -14,15 +14,18 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import type { FormListFieldData } from "antd";
 import SortableItem from "./SortableItem";
 
+interface SortableField {
+  id: string;
+}
+
 interface SortableFormListProps {
-  fields: FormListFieldData[];
+  fields: SortableField[];
   move: (from: number, to: number) => void;
   onAfterMove?: () => void;
   idPrefix?: string;
-  children: (field: FormListFieldData, index: number, dragHandle: ReactNode) => ReactNode;
+  children: (field: SortableField, index: number, dragHandle: ReactNode) => ReactNode;
 }
 
 export default function SortableFormList({
@@ -38,7 +41,7 @@ export default function SortableFormList({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const itemIds = fields.map((f) => `${idPrefix}-${f.key}`);
+  const itemIds = fields.map((f) => `${idPrefix}-${f.id}`);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -58,9 +61,9 @@ export default function SortableFormList({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {fields.map((field, index) => (
-            <SortableItem key={field.key} id={`${idPrefix}-${field.key}`}>
+            <SortableItem key={field.id} id={`${idPrefix}-${field.id}`}>
               {(dragHandle) => children(field, index, dragHandle)}
             </SortableItem>
           ))}

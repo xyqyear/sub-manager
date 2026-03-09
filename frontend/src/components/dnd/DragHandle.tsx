@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { HolderOutlined } from "@ant-design/icons";
+import { GripVertical } from "lucide-react";
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 
 interface DragHandleProps {
@@ -13,7 +13,7 @@ const DragHandle = forwardRef<HTMLSpanElement, DragHandleProps>(
       {...listeners}
       style={{ cursor: "grab", touchAction: "none", display: "inline-flex", alignItems: "center" }}
     >
-      <HolderOutlined />
+      <GripVertical className="h-4 w-4 text-muted-foreground" />
     </span>
   ),
 );
