@@ -141,6 +141,7 @@ export default function RouteTemplatesPage() {
       await api.put("/admin/route-templates/reorder", {
         items: reordered.map((item, i) => ({ id: item.id, position: i + 1 })),
       });
+      toast.success("Reorder saved");
     } catch (err) {
       toast.error(errorDetail(err));
       await fetchAll();
