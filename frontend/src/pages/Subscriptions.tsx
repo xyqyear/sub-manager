@@ -103,7 +103,7 @@ export default function SubscriptionsPage() {
           auto_update: item.auto_update,
           update_interval_sec: item.update_interval_sec,
           proxy_yaml_object_text: full.cached_proxies_json
-            ? yaml.dump(full.cached_proxies_json[0], { lineWidth: -1 })
+            ? yaml.dump(full.cached_proxies_json, { lineWidth: -1 })
             : "",
         });
       } catch (err) {
@@ -432,7 +432,7 @@ export default function SubscriptionsPage() {
                 <Textarea
                   rows={10}
                   {...form.register("proxy_yaml_object_text", { required: "Proxy YAML is required" })}
-                  placeholder={"name: my-proxy\ntype: ss\nserver: example.com\nport: 443\ncipher: chacha20-ietf-poly1305\npassword: secret"}
+                  placeholder={"- name: my-proxy\n  type: ss\n  server: example.com\n  port: 443\n  cipher: chacha20-ietf-poly1305\n  password: secret"}
                 />
                 {form.formState.errors.proxy_yaml_object_text && <p className="text-sm text-destructive">{form.formState.errors.proxy_yaml_object_text.message}</p>}
               </div>
