@@ -415,7 +415,7 @@ export default function RulesPage() {
 
       {/* Preview Dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-2xl lg:max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-w-2xl lg:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Preview: {previewTitle}</DialogTitle>
           </DialogHeader>
