@@ -325,7 +325,7 @@ export default function RouteTemplatesPage() {
                           </div>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:contents">
-                          <div className="space-y-1 lg:space-y-0 lg:flex-[3_1_0%] lg:min-w-[140px]">
+                          <div className="space-y-1 lg:space-y-0 lg:flex-[3_1_0%] lg:min-w-35">
                             <Label className="text-xs lg:sr-only">Rule Source</Label>
                             <Controller
                               control={form.control}
@@ -345,14 +345,14 @@ export default function RouteTemplatesPage() {
                               )}
                             />
                           </div>
-                          <div className="space-y-1 lg:space-y-0 lg:flex-[2_1_0%] lg:min-w-[100px]">
+                          <div className="space-y-1 lg:space-y-0 lg:flex-[2_1_0%] lg:min-w-25">
                             <Label className="text-xs lg:sr-only">Binding Name</Label>
                             <Input
                               {...form.register(`bindings.${index}.binding_name`)}
                               placeholder={ruleName || "Same as rule source"}
                             />
                           </div>
-                          <div className="space-y-1 lg:space-y-0 lg:flex-[2_1_0%] lg:min-w-[100px]">
+                          <div className="space-y-1 lg:space-y-0 lg:flex-[2_1_0%] lg:min-w-25">
                             <Label className="text-xs lg:sr-only">Default Target</Label>
                             <Controller
                               control={form.control}
