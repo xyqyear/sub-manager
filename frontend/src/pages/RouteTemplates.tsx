@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 import { toast } from "sonner";
-import { Plus, RefreshCw, Trash2, Pencil } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Pencil, Import, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ConfirmPopover } from "@/components/ui/confirm-popover";
 import CardGrid from "@/components/CardGrid";
 import SortableFormList from "@/components/dnd/SortableFormList";
@@ -42,6 +43,8 @@ export default function RouteTemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RouteTemplate | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSourceId, setImportSourceId] = useState<string>("");
 
   const form = useForm<TemplateFormValues>({ defaultValues: defaultFormValues });
   const slotsField = useFieldArray({ control: form.control, name: "slots" });
@@ -55,6 +58,29 @@ export default function RouteTemplatesPage() {
       .filter((s) => s?.name)
       .map((s) => ({ label: s.name, value: s.name })),
   ], [slotsWatch]);
+
+  const importTemplateOptions = useMemo(
+    () => items.filter((t) => t.id !== editing?.id).map((t) => ({ label: t.name, value: t.id })),
+    [items, editing]
+  );
+
+  const handleImportConfirm = useCallback(() => {
+    const source = items.find((t) => t.id === importSourceId);
+    if (!source) return;
+    const currentName = form.getValues("name");
+    form.reset({
+      name: currentName,
+      slots: source.slots.map((s) => ({ name: s.name })),
+      bindings: source.bindings.map((b) => ({
+        binding_name: b.binding_name,
+        rule_source_id: b.rule_source_id,
+        default_target: b.default_target,
+        no_resolve: b.no_resolve,
+      })),
+    });
+    setImportOpen(false);
+    setImportSourceId("");
+  }, [items, importSourceId, form]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -198,7 +224,12 @@ export default function RouteTemplatesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-4xl w-[90vw] max-h-[90vh] p-0 flex flex-col">
           <DialogHeader className="px-6 py-4 border-b shrink-0">
-            <DialogTitle>{editing ? "Edit Template" : "New Template"}</DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle>{editing ? "Edit Template" : "New Template"}</DialogTitle>
+              <Button variant="outline" size="sm" onClick={() => { setImportSourceId(""); setImportOpen(true); }}>
+                <Import className="h-3 w-3 mr-1" /> Import
+              </Button>
+            </div>
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto">
             <form onSubmit={form.handleSubmit(onSubmit)} className="p-6 space-y-4">
@@ -368,6 +399,34 @@ export default function RouteTemplatesPage() {
           <DialogFooter className="mx-0 mb-0 px-6 py-4 shrink-0">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={form.handleSubmit(onSubmit)}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import from Template</DialogTitle>
+          </DialogHeader>
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              This will overwrite all current form fields except name.
+            </AlertDescription>
+          </Alert>
+          <Select value={importSourceId || "__none__"} onValueChange={(v: string | null) => setImportSourceId(v === "__none__" || v === null ? "" : v)}>
+            <SelectTrigger><SelectValue placeholder="Select template">{importTemplateOptions.find((o) => o.value === importSourceId)?.label ?? undefined}</SelectValue></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__" disabled>Select a template...</SelectItem>
+              {importTemplateOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>Cancel</Button>
+            <Button onClick={handleImportConfirm} disabled={!importSourceId}>Import</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
