@@ -17,6 +17,7 @@ from app.services.common import (
     parse_subscription_userinfo,
     utc_now,
 )
+from app.services.subscription_uri import parse_uri_subscription_payload
 from app.yaml import YAMLError, yaml_dump, yaml_load
 
 
@@ -47,20 +48,24 @@ def _parse_remote_subscription_payload(content: str) -> list[dict[str, Any]]:
     try:
         parsed = yaml_load(content)
     except YAMLError as exc:
-        raise ServiceError(f"subscription YAML parse failed: {exc}", 422) from exc
+        yaml_error = str(exc)
+    else:
+        if isinstance(parsed, dict):
+            proxies = parsed.get("proxies")
+            if isinstance(proxies, list):
+                normalized: list[dict[str, Any]] = []
+                for item in proxies:
+                    if isinstance(item, dict):
+                        normalized.append(copy.deepcopy(item))
+                return normalized
+            yaml_error = "subscription missing proxies list"
+        else:
+            yaml_error = "subscription response must be a YAML object"
 
-    if not isinstance(parsed, dict):
-        raise ServiceError("subscription response must be a YAML object", 422)
-
-    proxies = parsed.get("proxies")
-    if not isinstance(proxies, list):
-        raise ServiceError("subscription missing proxies list", 422)
-
-    normalized: list[dict[str, Any]] = []
-    for item in proxies:
-        if isinstance(item, dict):
-            normalized.append(copy.deepcopy(item))
-    return normalized
+    try:
+        return parse_uri_subscription_payload(content)
+    except ValueError as exc:
+        raise ServiceError(f"subscription parse failed: {yaml_error}; {exc}", 422) from exc
 
 
 async def create_subscription(db: AsyncSession, payload: SubscriptionCreate) -> SubscriptionSource:

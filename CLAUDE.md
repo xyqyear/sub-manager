@@ -44,6 +44,8 @@ Users add their proxy providers. A provider can be:
 - A remote URL (e.g., from a VPN service) — the system fetches and caches the proxy node list, tracks traffic usage/expiry, and auto-refreshes on a schedule
 - A manually entered single proxy node (YAML)
 
+Remote subscription payloads can be Clash/mihomo YAML with a top-level `proxies` list, raw URI subscription lines, or base64-wrapped URI subscription lines.
+
 Each source provides a list of proxy nodes (e.g., "Hong Kong 1", "US IEPL 2", etc.).
 
 **Stage 2 — Rule Sources: traffic routing rules**
@@ -284,7 +286,7 @@ The three resource types described in the Product Overview map to the following 
 
 Corresponds to Stage 1 (proxy node providers). Two modes:
 
-- **remote**: Fetched from URL with `User-Agent: mihomo/1.18.3`, optional `Authorization` header. Caches `proxies` list from YAML. Parses `subscription-userinfo` header for traffic data.
+- **remote**: Fetched from URL with `User-Agent: mihomo.party/v1.8.9 (clash.meta)`, optional `Authorization` header. Caches proxies from Clash/mihomo YAML, raw URI subscription lines, or base64-wrapped URI subscription lines. Supported URI schemes are `ss`, `ssr`, `vmess`, `vless`, `trojan`, `hysteria`/`hy`, `hysteria2`/`hy2`, `tuic`, and `anytls`. Parses `subscription-userinfo` header for traffic data.
 - **manual**: User provides a single YAML proxy object directly.
 
 Fields: `id`, `name` (unique), `mode`, `enabled`, `remote_url`, `remote_auth_header`, `auto_update`, `update_interval_sec`, `next_refresh_at`, `last_refresh_at`, `last_status` (never/ok/error), `last_error`, `subscription_userinfo_raw`, `subscription_userinfo_json`, `cached_raw_yaml`, `cached_proxies_json`, `position`.
